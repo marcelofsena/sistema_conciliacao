@@ -397,7 +397,7 @@ def buscar_dados_conferencia(codigo_loja, nr_abertura, incluir_dinheiro=False):
                         WHERE LOWER(sw5.aplicativo) = 'ifood' AND sw5.codigo_loja = ? AND sw5.nr_abertura = ?
                     ) AND LOWER(TRIM(i.formas_pagamento)) NOT IN ('dinheiro') 
                       AND i.id_restaurante = emp.ncad_ifood
-                      AND LOWER(TRIM(i.formas_pagamento)) NOT LIKE '%entrega%'
+                      
                 ), 0)
 
                 WHEN fp.especific_form_pgto = 'DINHEIRO' THEN COALESCE((
