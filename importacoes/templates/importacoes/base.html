@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Conciliação de Caixa</title>
+    <style>
+        /* Estilos Globais e do Menu */
+        body { margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; height: 100vh; background-color: #f4f7f6; color: #333; }
+        .sidebar { width: 260px; background-color: #2c3e50; color: white; display: flex; flex-direction: column; box-shadow: 2px 0 5px rgba(0,0,0,0.1); z-index: 100; }
+        .sidebar h2 { text-align: center; padding: 20px 0; margin: 0; background-color: #1a252f; font-size: 22px; letter-spacing: 1px; }
+        .sidebar a { padding: 15px 25px; color: #bdc3c7; text-decoration: none; border-bottom: 1px solid #34495e; display: block; transition: all 0.3s ease; font-size: 16px; }
+        .sidebar a:hover { background-color: #34495e; color: #fff; padding-left: 30px; border-left: 4px solid #3498db; }
+        .content { flex: 1; padding: 30px; overflow-y: auto; }
+        .card { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); min-height: 80vh; }
+        
+        /* Estilos padronizados para tabelas e botões em todo o sistema */
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #e0e0e0; padding: 10px; text-align: left; }
+        th { background-color: #f8f9fa; color: #2c3e50; }
+        .btn-primary { padding: 10px 20px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; text-decoration: none; display: inline-block; }
+        .btn-primary:hover { background: #2980b9; }
+        .btn-success { background: #27ae60; } .btn-success:hover { background: #2ecc71; }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <h2>💰 Conciliação</h2>
+        <a href="{% url 'home' %}">🏠 Painel Inicial</a>
+        <a href="{% url 'upload_arquivos' %}">📥 Importar Arquivos</a>
+        <a href="{% url 'formas_pagamento' %}">💳 Sincronizar Formas</a>
+        <a href="{% url 'conferencia_caixa' %}">📊 Conferência de Caixa</a>
+        <a href="/admin/" target="_blank" style="margin-top: auto; background-color: #1a252f;">⚙️ Administração</a>
+        <a href="{% url 'logout' %}" style="background-color: #c0392b; border-bottom: none;">🚪 Sair</a>
+    </div>
+
+    <div class="content">
+        <div class="card">
+            {% block content %}
+            {% endblock %}
+        </div>
+    </div>
+
+</body>
+</html>

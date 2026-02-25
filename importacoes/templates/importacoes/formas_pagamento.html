@@ -1,0 +1,60 @@
+{% extends 'importacoes/base.html' %}
+
+{% block content %}
+    <h2 style="color: #2c3e50; border-bottom: 2px solid #ecf0f1; padding-bottom: 10px;">💳 Sincronizar Formas de Pagamento</h2>
+    <p>Esta ferramenta varre os dados importados do SWFast e extrai as novas formas de pagamento utilizadas.</p>
+
+    {% if messages %}
+        <ul style="list-style: none; padding: 0;">
+            {% for message in messages %}
+                <li style="padding: 12px; margin-bottom: 15px; border-radius: 4px; font-weight: bold;
+                    {% if message.tags == 'success' %}background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb;
+                    {% elif message.tags == 'error' %}background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb;
+                    {% else %}background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb;{% endif %}">
+                    {{ message }}
+                </li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+
+    <form method="POST" style="margin-bottom: 30px; margin-top: 20px;">
+        {% csrf_token %}
+        <button type="submit" class="btn-primary">🔍 Verificar e Adicionar Novas Formas no Banco</button>
+    </form>
+
+    <h3 style="color: #2c3e50;">Registros Atuais no Banco</h3>
+    <p style="font-size: 14px; color: #7f8c8d;"><i>*Para editar a coluna "Especificação (Resumo)", acesse o menu <a href="/admin/importacoes/formapagamento/" target="_blank">Administração</a>.</i></p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Loja</th>
+                <th>Aplicativo</th>
+                <th>Forma de Pagamento (SWFast)</th>
+                <th>Especificação (Resumo/Grupo)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for forma in formas %}
+            <tr>
+                <td>{{ forma.id }}</td>
+                <td>{{ forma.codigo_loja }}</td>
+                <td>{{ forma.aplicativo }}</td>
+                <td><strong>{{ forma.forma_pagamento }}</strong></td>
+                <td>
+                    {% if forma.especific_form_pgto %}
+                        <span style="color: #27ae60; font-weight: bold;">{{ forma.especific_form_pgto }}</span>
+                    {% else %}
+                        <span style="color: #e74c3c; font-weight: bold;">[Vazio - Requer Configuração no Admin]</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="5" style="text-align: center; padding: 20px;">Nenhuma forma de pagamento cadastrada. Importe o SWFast e clique no botão acima!</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+{% endblock %}

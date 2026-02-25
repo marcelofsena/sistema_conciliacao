@@ -1,0 +1,119 @@
+{% extends 'importacoes/base.html' %}
+
+{% block content %}
+    <h2 style="color: #2c3e50; border-bottom: 2px solid #ecf0f1; padding-bottom: 10px;">📊 Controle e Conferência de Caixa</h2>
+
+    <div style="display: flex; gap: 30px; margin-top: 20px;">
+        
+        <div style="width: 300px; background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid #e0e0e0; height: fit-content;">
+            <h3 style="margin-top: 0; color: #2c3e50; border-bottom: 1px solid #ccc; padding-bottom: 10px;">Filtros de Busca</h3>
+            
+            <form method="GET" action="" id="form_conferencia">
+                <div style="margin-bottom: 20px; background: #fff; padding: 10px; border-radius: 4px; border: 1px solid #ddd;">
+                    <label style="font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" name="incluir_dinheiro" {% if request.GET.incluir_dinheiro %}checked{% endif %} onchange="this.form.submit()"> 
+                        Incluir Caixa Físico (Dinheiro)
+                    </label>
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <label style="font-weight: bold; display: block; margin-bottom: 5px;">Selecione a Loja:</label>
+                    <select name="codigo_loja" onchange="this.form.submit()" style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 15px;">
+                        <option value="">-- Selecione a Loja --</option>
+                        {% for loja in lojas %}
+                            <option value="{{ loja }}" {% if loja == codigo_loja_selecionada %}selected{% endif %}>Loja {{ loja }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                {% if aberturas %}
+                    <div style="margin-bottom: 15px;">
+                        <label style="font-weight: bold; display: block; margin-bottom: 5px;">Selecione a Abertura:</label>
+                        <select id="select_abertura" name="nr_abertura" style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 15px;" onchange="this.form.submit()">
+                            <option value="">-- Selecione o Turno --</option>
+                            {% for abert in aberturas %}
+                                <option value="{{ abert }}" {% if abert == nr_abertura_selecionada %}selected{% endif %}>Caixa: {{ abert }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                        <button type="button" onclick="mudarAbertura(-1)" style="flex: 1; padding: 10px; cursor: pointer; background: #e0e0e0; border: 1px solid #ccc; border-radius: 4px; font-weight: bold; transition: 0.2s;">➖ Anterior</button>
+                        <button type="button" onclick="mudarAbertura(1)" style="flex: 1; padding: 10px; cursor: pointer; background: #e0e0e0; border: 1px solid #ccc; border-radius: 4px; font-weight: bold; transition: 0.2s;">Próximo ➕</button>
+                    </div>
+
+                    <button type="submit" class="btn-primary" style="width: 100%;">🔄 Recarregar Dados</button>
+                {% endif %}
+            </form>
+        </div>
+
+        <div style="flex: 1;">
+            {% if resultados %}
+                <h3 style="color: #2c3e50; margin-top: 0;">
+                    Resumo Financeiro - Caixa Número: {{ nr_abertura_selecionada }}
+                    {% if data_caixa_selecionada %} - {{ data_caixa_selecionada }}{% endif %}
+                </h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Resumo (Forma Pagto)</th>
+                            <th>Rel. Importados (Stone/iFood)</th>
+                            <th>Rel. SWFast (Caixa)</th>
+                            <th>Diferença</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for linha in resultados %}
+                        <tr {% if linha.RESUMO == 'SUBTOTAL' %}style="background-color: #f1f2f6; font-weight: bold;"{% endif %}>
+                            <td>{{ linha.RESUMO }}</td>
+                            <td>R$ {{ linha.Rel_importados|floatformat:2 }}</td>
+                            <td>R$ {{ linha.rel_swfast|floatformat:2 }}</td>
+                            <td style="font-weight: bold; {% if linha.diferenca < 0 %}color: #e74c3c;{% elif linha.diferenca > 0 %}color: #2980b9;{% else %}color: #27ae60;{% endif %}">
+                                R$ {{ linha.diferenca|floatformat:2 }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <div style="margin-top: 25px;">
+                    <a href="{% url 'exportar_analitico' %}?codigo_loja={{ codigo_loja_selecionada }}&nr_abertura={{ nr_abertura_selecionada }}"
+                       class="btn-primary"
+                       style="background-color: #27ae60; text-decoration: none; padding: 12px 20px; font-weight: bold; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                       📥 Baixar Relatório Analítico (Excel)
+                    </a>
+                </div>
+            {% elif codigo_loja_selecionada and nr_abertura_selecionada %}
+                <div style="background: #fff3cd; color: #856404; padding: 15px; border-radius: 4px; border: 1px solid #ffeeba;">
+                    <strong>Aviso:</strong> Nenhum dado financeiro encontrado para este caixa.
+                </div>
+            {% else %}
+                <div style="background: #e2e3e5; color: #383d41; padding: 20px; border-radius: 4px; border: 1px solid #d6d8db; text-align: center;">
+                    <h3 style="margin-top: 0;">Aguardando Seleção</h3>
+                    <p>Selecione uma loja e o número da abertura no painel ao lado para visualizar a conciliação do caixa.</p>
+                </div>
+            {% endif %}
+        </div>
+
+    </div>
+
+    <script>
+        function mudarAbertura(passo) {
+            var select = document.getElementById('select_abertura');
+            var currentIndex = select.selectedIndex;
+            var maxIndex = select.options.length - 1;
+
+            if (currentIndex === 0 && passo > 0) {
+                select.selectedIndex = 1;
+                document.getElementById('form_conferencia').submit();
+                return;
+            }
+
+            var newIndex = currentIndex + passo;
+
+            if (newIndex >= 1 && newIndex <= maxIndex) {
+                select.selectedIndex = newIndex;
+                document.getElementById('form_conferencia').submit();
+            }
+        }
+    </script>
+{% endblock %}
