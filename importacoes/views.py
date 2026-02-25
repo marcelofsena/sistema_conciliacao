@@ -75,8 +75,9 @@ def pagina_upload(request):
                     df["CodigoLoja"] = df["CodigoLoja"].apply(limpar_numero)
                     df["NrAbertura"] = df["NrAbertura"].apply(limpar_numero) if "NrAbertura" in df.columns else ""
 
-                    df.loc[df["FormaPagamento"].str.contains("IFOOD", na=False, case=False), "FormaPagamento"] = "IFOOD"
-
+                    df.loc[df["FormaPagamento"].str.contains("IFOOD ONLINE", na=False, case=False), "FormaPagamento"] = "IFOOD"
+                    df.loc[df["FormaPagamento"].str.contains("IFOOD VOUCHER", na=False, case=False), "FormaPagamento"] = "IFOOD"
+                    
                     col_venda = "Venda" if "Venda" in df.columns else "IdPedidoExterno"
                     df["ChaveComposta"] = (
                         df["FormaPagamento"].astype(str) + "-" + 
@@ -394,7 +395,9 @@ def buscar_dados_conferencia(codigo_loja, nr_abertura, incluir_dinheiro=False):
                     WHERE LOWER(TRIM(i.id_pedido)) IN (
                         SELECT LOWER(TRIM(sw5.id_pedido_externo)) FROM importacoes_vendaswfast sw5
                         WHERE LOWER(sw5.aplicativo) = 'ifood' AND sw5.codigo_loja = ? AND sw5.nr_abertura = ?
-                    ) AND LOWER(TRIM(i.formas_pagamento)) NOT IN ('dinheiro') AND i.id_restaurante = emp.ncad_ifood
+                    ) AND LOWER(TRIM(i.formas_pagamento)) NOT IN ('dinheiro') 
+                      AND i.id_restaurante = emp.ncad_ifood
+                      AND LOWER(TRIM(i.formas_pagamento)) NOT LIKE '%entrega%'
                 ), 0)
 
                 WHEN fp.especific_form_pgto = 'DINHEIRO' THEN COALESCE((
@@ -522,23 +525,13 @@ def exportar_analitico_excel(request):
             SUM(sw.valor_pagamento) AS "Valor SWFast",
             COALESCE(i.vlr_pedido_sw, 0) AS "iFood Repasse",
             COALESCE(i.incentivo_ifood, 0) AS "iFood Incentivo",
-            
-            /* Correção: O Total agora usa apenas o Repasse, igual ao Sintético */
             COALESCE(i.vlr_pedido_sw, 0) AS "Total iFood (Conciliação)",
             (COALESCE(i.vlr_pedido_sw, 0) - SUM(sw.valor_pagamento)) AS "Diferença"
-            
         FROM importacoes_vendaswfast sw
         LEFT JOIN importacoes_pedidoifood i ON LOWER(TRIM(sw.id_pedido_externo)) = LOWER(TRIM(i.id_pedido))
         WHERE sw.codigo_loja = ? AND sw.nr_abertura = ? AND LOWER(sw.aplicativo) = 'ifood'
-        
-        /* Agrupa para somar os pagamentos divididos no mesmo pedido */
         GROUP BY 
-            sw.data_hora_transacao,
-            sw.venda,
-            sw.id_pedido_externo,
-            i.vlr_pedido_sw,
-            i.incentivo_ifood
-            
+            sw.data_hora_transacao, sw.venda, sw.id_pedido_externo, i.vlr_pedido_sw, i.incentivo_ifood
         ORDER BY sw.data_hora_transacao
     """
     df_ifood = pd.read_sql(query_ifood, conn, params=[codigo_loja, nr_abertura])
@@ -581,24 +574,49 @@ def exportar_analitico_excel(request):
     """
     df_stone = pd.read_sql(query_stone, conn, params=[codigo_loja, codigo_loja, nr_abertura, codigo_loja, nr_abertura])
 
+    # ==========================================
+    # 4. NOVO: iFood NÃO Integrado (Furo de Caixa)
+    # ==========================================
+    query_nao_integrado = """
+        SELECT
+            i.data AS "Data no iFood",
+            i.id_pedido AS "ID Pedido iFood",
+            COALESCE(i.vlr_pedido_sw, 0) AS "iFood Repasse",
+            COALESCE(i.incentivo_ifood, 0) AS "iFood Incentivo",
+            (COALESCE(i.vlr_pedido_sw, 0) + COALESCE(i.incentivo_ifood, 0)) AS "Valor Total Oculto do Caixa"
+        FROM importacoes_pedidoifood i
+        WHERE i.data BETWEEN 
+            (SELECT DATETIME(MIN(sw.dthr_abert_cx)) FROM importacoes_vendaswfast sw WHERE sw.codigo_loja = ? AND sw.nr_abertura = ?)
+            AND 
+            (SELECT DATETIME(MAX(sw.dthr_encerr_cx)) FROM importacoes_vendaswfast sw WHERE sw.codigo_loja = ? AND sw.nr_abertura = ?)
+        AND LOWER(TRIM(i.id_pedido)) NOT IN (
+            SELECT LOWER(TRIM(sw2.id_pedido_externo))
+            FROM importacoes_vendaswfast sw2
+            WHERE sw2.id_pedido_externo IS NOT NULL AND sw2.id_pedido_externo != ''
+        )
+        ORDER BY i.data
+    """
+    # Nota: Assumi que o nome da sua coluna de data na tabela do iFood é 'data_pedido'. 
+    # Se for diferente no seu models.py, é só trocar ali no 'i.data_pedido'.
+    df_nao_integrado = pd.read_sql(query_nao_integrado, conn, params=[codigo_loja, nr_abertura, codigo_loja, nr_abertura])
+
     conn.close()
 
-    # Gerar o arquivo Excel em memória usando o openpyxl (já instalado no seu venv)
+    # Gerar o arquivo Excel com a nova aba
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df_ifood.to_excel(writer, sheet_name='Analítico iFood (Linha a Linha)', index=False)
+        df_ifood.to_excel(writer, sheet_name='Analítico iFood (Integrados)', index=False)
+        df_nao_integrado.to_excel(writer, sheet_name='iFood NÃO Integrado (Furos)', index=False) # <--- NOVA ABA
         df_cartoes_sw.to_excel(writer, sheet_name='Cartões Passados no Caixa', index=False)
         df_stone.to_excel(writer, sheet_name='Transações Reais Stone', index=False)
 
     output.seek(0)
     
-    # Preparar a resposta HTTP de Download
     response = HttpResponse(output, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     nome_arquivo = f'Analitico_Caixa_{codigo_loja}_Turno_{nr_abertura}.xlsx'
     response['Content-Disposition'] = f'attachment; filename="{nome_arquivo}"'
     
     return response
-
 # ==========================================
 # VIEW DE LOGOUT CUSTOMIZADA
 # ==========================================
