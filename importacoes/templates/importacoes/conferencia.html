@@ -29,12 +29,14 @@
                 {% if aberturas %}
                     <div style="margin-bottom: 15px;">
                         <label style="font-weight: bold; display: block; margin-bottom: 5px;">Selecione a Abertura:</label>
-                        <select id="select_abertura" name="nr_abertura" style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 15px;" onchange="this.form.submit()">
-                            <option value="">-- Selecione o Turno --</option>
-                            {% for abert in aberturas %}
-                                <option value="{{ abert }}" {% if abert == nr_abertura_selecionada %}selected{% endif %}>Caixa: {{ abert }}</option>
-                            {% endfor %}
-                        </select>
+                    <select id="select_abertura" name="nr_abertura" style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 15px;" onchange="this.form.submit()">
+                    <option value="">-- Selecione o Turno --</option>
+                    {% for abert in aberturas %}
+                        <option value="{{ abert.numero }}" {% if abert.numero == nr_abertura_selecionada %}selected{% endif %}>
+                            {{ abert.rotulo }}
+                        </option>
+                    {% endfor %}
+                    </select>    
                     </div>
 
                     <div style="display: flex; gap: 10px; margin-bottom: 20px;">

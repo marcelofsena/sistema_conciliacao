@@ -346,21 +346,61 @@ def carregar_lojas(usuario):
         print(f"Erro ao carregar lojas: {e}")
         return []
 
+# ==========================================
+# CARREGAR ABERTURAS COM DATA E TURNO
+# ==========================================
 def carregar_aberturas(codigo_loja):
-    if not codigo_loja: return []
+    """Retorna uma lista de dicionários com o número do caixa, a data e o turno"""
+    if not codigo_loja:
+        return []
+
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        # O CAST garante que a ordem numérica seja exata (ex: 3624 antes do 3625)
+        
+        # Busca o número do caixa e a hora da PRIMEIRA venda que ocorreu nele
         cursor.execute("""
-            SELECT DISTINCT nr_abertura 
+            SELECT nr_abertura, MIN(data_hora_transacao) 
             FROM importacoes_vendaswfast 
-            WHERE codigo_loja = ? AND nr_abertura IS NOT NULL
-            ORDER BY CAST(nr_abertura AS INTEGER)
-        """, (codigo_loja,))
-        aberturas = [str(row[0]) for row in cursor.fetchall()]
+            WHERE codigo_loja = ? AND nr_abertura IS NOT NULL AND nr_abertura != ''
+            GROUP BY nr_abertura
+            ORDER BY nr_abertura DESC
+        """, [codigo_loja])
+        
+        aberturas_formatadas = []
+        
+        for row in cursor.fetchall():
+            nr_abertura = str(row[0])
+            data_hora = row[1]
+            
+            # Texto padrão caso falhe ao ler a data
+            texto_exibicao = f"Caixa: {nr_abertura}"
+            
+            if data_hora:
+                try:
+                    # Converte a data do banco (ex: '2026-02-26 14:30:00')
+                    dt = datetime.strptime(data_hora, '%Y-%m-%d %H:%M:%S')
+                    data_br = dt.strftime('%d/%m/%Y')
+                    
+                    # Aplica a mesma regra de turno: 06h às 17h59 = Dia, o resto = Noite
+                    if 6 <= dt.hour < 18:
+                        turno = "Dia"
+                    else:
+                        turno = "Noite"
+                        
+                    texto_exibicao = f"Caixa: {nr_abertura} - {data_br} - {turno}"
+                except Exception:
+                    pass # Se a data vier vazia ou num formato estranho, mantém só o número
+            
+            # Guardamos o número real para o sistema usar, e o texto bonito para o usuário ver
+            aberturas_formatadas.append({
+                'numero': nr_abertura,
+                'rotulo': texto_exibicao
+            })
+            
         conn.close()
-        return aberturas
+        return aberturas_formatadas
+        
     except Exception as e:
         print(f"Erro ao carregar aberturas: {e}")
         return []
@@ -508,6 +548,7 @@ def pagina_conferencia(request):
 def exportar_analitico_excel(request):
     codigo_loja = request.GET.get('codigo_loja')
     nr_abertura = request.GET.get('nr_abertura')
+    incluir_dinheiro = request.GET.get('incluir_dinheiro') == 'on'
 
     if not codigo_loja or not nr_abertura:
         messages.error(request, "Parâmetros inválidos para o relatório analítico.")
@@ -515,7 +556,70 @@ def exportar_analitico_excel(request):
 
     conn = sqlite3.connect(DB_PATH)
 
-    # 1. Analítico iFood (Linha a Linha) - Agrupando pagamentos e espelhando o Sintético
+    # ==========================================
+    # 0. DEFINIR O TURNO (DIA OU NOITE)
+    # ==========================================
+    cursor = conn.cursor()
+    # Pega o horário da primeira venda desse caixa
+    cursor.execute("SELECT MIN(data_hora_transacao) FROM importacoes_vendaswfast WHERE codigo_loja = ? AND nr_abertura = ? AND data_hora_transacao IS NOT NULL", [codigo_loja, nr_abertura])
+    primeira_venda = cursor.fetchone()
+    
+    turno = "Indefinido"
+    if primeira_venda and primeira_venda[0]:
+        try:
+            # Extrai apenas a hora da string de data (Ex: de '2026-02-25 14:30:00' pega o '14')
+            hora_abertura = int(primeira_venda[0][11:13])
+            
+            # NOVA REGRA: Das 06h às 17:59 = Dia | Das 18h até 05:59 = Noite
+            if 6 <= hora_abertura < 18:
+                turno = "Dia"
+            else:
+                turno = "Noite"
+        except Exception as e:
+            print(f"Erro ao calcular o turno: {e}")
+
+    # ==========================================
+    # 1. RESUMO DO CAIXA (NOVA PRIMEIRA ABA)
+    # ==========================================
+    df_res, df_canc, val_inc = buscar_dados_conferencia(codigo_loja, nr_abertura, incluir_dinheiro)
+    
+    if not df_res.empty:
+        nova_linha_incentivo = pd.DataFrame({
+            "RESUMO": ["INCENTIVO IFOOD A RECEBER DINHEIRO"], 
+            "rel_swfast": [0.0], 
+            "Rel_importados": [val_inc]
+        })
+        df_res = pd.concat([df_res, nova_linha_incentivo], ignore_index=True)
+        
+        df_res["Rel_importados"] = pd.to_numeric(df_res["Rel_importados"], errors='coerce').fillna(0)
+        df_res["rel_swfast"] = pd.to_numeric(df_res["rel_swfast"], errors='coerce').fillna(0)
+        df_res["diferenca"] = df_res["Rel_importados"] - df_res["rel_swfast"]
+        
+        linha_subtotal = pd.DataFrame({
+            "RESUMO": ["SUBTOTAL"], 
+            "Rel_importados": [df_res["Rel_importados"].sum()], 
+            "rel_swfast": [df_res["rel_swfast"].sum()], 
+            "diferenca": [df_res["diferenca"].sum()]
+        })
+        df_res = pd.concat([df_res, linha_subtotal], ignore_index=True)
+        
+        # Renomeia as colunas para o Excel ficar bonito
+        df_res.rename(columns={
+            'RESUMO': 'Resumo (Forma Pagto)',
+            'Rel_importados': 'Rel. Importados (Stone/iFood)',
+            'rel_swfast': 'Rel. SWFast (Caixa)',
+            'diferenca': 'Diferença'
+        }, inplace=True)
+
+        # INSERE AS INFORMAÇÕES EXTRAS NAS PRIMEIRAS COLUNAS
+        df_res.insert(0, 'Caixa Nº', nr_abertura)
+        df_res.insert(1, 'Turno', turno)
+    else:
+        df_res = pd.DataFrame(columns=['Caixa Nº', 'Turno', 'Resumo (Forma Pagto)', 'Rel. Importados (Stone/iFood)', 'Rel. SWFast (Caixa)', 'Diferença'])
+
+    # ==========================================
+    # 2. ABA: ANALÍTICO IFOOD (INTEGRADOS)
+    # ==========================================
     query_ifood = """
         SELECT
             sw.data_hora_transacao AS "Data SWFast",
@@ -530,13 +634,14 @@ def exportar_analitico_excel(request):
         FROM importacoes_vendaswfast sw
         LEFT JOIN importacoes_pedidoifood i ON LOWER(TRIM(sw.id_pedido_externo)) = LOWER(TRIM(i.id_pedido))
         WHERE sw.codigo_loja = ? AND sw.nr_abertura = ? AND LOWER(sw.aplicativo) = 'ifood'
-        GROUP BY 
-            sw.data_hora_transacao, sw.venda, sw.id_pedido_externo, i.vlr_pedido_sw, i.incentivo_ifood
+        GROUP BY sw.data_hora_transacao, sw.venda, sw.id_pedido_externo, i.vlr_pedido_sw, i.incentivo_ifood
         ORDER BY sw.data_hora_transacao
     """
     df_ifood = pd.read_sql(query_ifood, conn, params=[codigo_loja, nr_abertura])
 
-    # 2. Analítico Cartões no SWFast
+    # ==========================================
+    # 3. ABA: CARTÕES NO SWFAST
+    # ==========================================
     query_cartoes_sw = """
         SELECT
             sw.data_hora_transacao AS "Data SWFast",
@@ -553,7 +658,9 @@ def exportar_analitico_excel(request):
     """
     df_cartoes_sw = pd.read_sql(query_cartoes_sw, conn, params=[codigo_loja, nr_abertura])
 
-    # 3. Analítico Cartões na Stone (Intervalo de Horário do Caixa)
+    # ==========================================
+    # 4. ABA: TRANSAÇÕES REAIS STONE
+    # ==========================================
     query_stone = """
         SELECT
             c.data_venda AS "Data Venda Stone",
@@ -575,20 +682,20 @@ def exportar_analitico_excel(request):
     df_stone = pd.read_sql(query_stone, conn, params=[codigo_loja, codigo_loja, nr_abertura, codigo_loja, nr_abertura])
 
     # ==========================================
-    # 4. NOVO: iFood NÃO Integrado (Furo de Caixa)
+    # 5. ABA: IFOOD NÃO INTEGRADO (FURO DE CAIXA)
     # ==========================================
     query_nao_integrado = """
         SELECT
-            i.data AS "Data no iFood",
+            i.data AS "Data no iFood",  /* AJUSTE SE O NOME DA COLUNA NO MODELS FOR DIFERENTE */
             i.id_pedido AS "ID Pedido iFood",
             COALESCE(i.vlr_pedido_sw, 0) AS "iFood Repasse",
             COALESCE(i.incentivo_ifood, 0) AS "iFood Incentivo",
             (COALESCE(i.vlr_pedido_sw, 0) + COALESCE(i.incentivo_ifood, 0)) AS "Valor Total Oculto do Caixa"
         FROM importacoes_pedidoifood i
         WHERE i.data BETWEEN 
-            (SELECT DATETIME(MIN(sw.dthr_abert_cx)) FROM importacoes_vendaswfast sw WHERE sw.codigo_loja = ? AND sw.nr_abertura = ?)
+            (SELECT DATETIME(MIN(sw.dthr_abert_cx), '-30 minutes') FROM importacoes_vendaswfast sw WHERE sw.codigo_loja = ? AND sw.nr_abertura = ?)
             AND 
-            (SELECT DATETIME(MAX(sw.dthr_encerr_cx)) FROM importacoes_vendaswfast sw WHERE sw.codigo_loja = ? AND sw.nr_abertura = ?)
+            (SELECT DATETIME(MAX(sw.dthr_encerr_cx), '+2 hours') FROM importacoes_vendaswfast sw WHERE sw.codigo_loja = ? AND sw.nr_abertura = ?)
         AND LOWER(TRIM(i.id_pedido)) NOT IN (
             SELECT LOWER(TRIM(sw2.id_pedido_externo))
             FROM importacoes_vendaswfast sw2
@@ -596,24 +703,28 @@ def exportar_analitico_excel(request):
         )
         ORDER BY i.data
     """
-    # Nota: Assumi que o nome da sua coluna de data na tabela do iFood é 'data_pedido'. 
-    # Se for diferente no seu models.py, é só trocar ali no 'i.data_pedido'.
     df_nao_integrado = pd.read_sql(query_nao_integrado, conn, params=[codigo_loja, nr_abertura, codigo_loja, nr_abertura])
 
     conn.close()
 
-    # Gerar o arquivo Excel com a nova aba
+    # ==========================================
+    # GERAÇÃO DO ARQUIVO EXCEL
+    # ==========================================
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        # AQUI INSERIMOS O RESUMO COMO A PRIMEIRA ABA
+        df_res.to_excel(writer, sheet_name='Resumo do Caixa', index=False)
+        
         df_ifood.to_excel(writer, sheet_name='Analítico iFood (Integrados)', index=False)
-        df_nao_integrado.to_excel(writer, sheet_name='iFood NÃO Integrado (Furos)', index=False) # <--- NOVA ABA
+        df_nao_integrado.to_excel(writer, sheet_name='iFood NÃO Integrado (Furos)', index=False)
         df_cartoes_sw.to_excel(writer, sheet_name='Cartões Passados no Caixa', index=False)
         df_stone.to_excel(writer, sheet_name='Transações Reais Stone', index=False)
 
     output.seek(0)
     
+    # Nomeia o arquivo com Loja, Caixa e Turno para fácil organização
     response = HttpResponse(output, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    nome_arquivo = f'Analitico_Caixa_{codigo_loja}_Turno_{nr_abertura}.xlsx'
+    nome_arquivo = f'Analitico_Loja{codigo_loja}_Cx{nr_abertura}_Turno_{turno}.xlsx'
     response['Content-Disposition'] = f'attachment; filename="{nome_arquivo}"'
     
     return response
