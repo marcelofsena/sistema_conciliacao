@@ -12,6 +12,7 @@ from .forms import UploadArquivoForm
 from .models import VendaSWFast, TransacaoStone, PedidoIFood, Empresa, FormaPagamento
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
+from openpyxl.styles import PatternFill
 
 @login_required(login_url='login')
 def home(request):
@@ -75,9 +76,6 @@ def pagina_upload(request):
                     df["CodigoLoja"] = df["CodigoLoja"].apply(limpar_numero)
                     df["NrAbertura"] = df["NrAbertura"].apply(limpar_numero) if "NrAbertura" in df.columns else ""
 
-                    df.loc[df["FormaPagamento"].str.contains("IFOOD ONLINE", na=False, case=False), "FormaPagamento"] = "IFOOD"
-                    df.loc[df["FormaPagamento"].str.contains("IFOOD VOUCHER", na=False, case=False), "FormaPagamento"] = "IFOOD"
-                    
                     col_venda = "Venda" if "Venda" in df.columns else "IdPedidoExterno"
                     df["ChaveComposta"] = (
                         df["FormaPagamento"].astype(str) + "-" + 
@@ -94,19 +92,25 @@ def pagina_upload(request):
 
                     contador = 0
                     for _, row in df.iterrows():
-                        data_transacao = row['DataHoraTransacao'] if pd.notna(row['DataHoraTransacao']) else None
+                        # Evita erros de valores vazios/NaN
+                        app = str(row.get('Aplicativo', '')).strip()
+                        id_ext = str(row.get('IdPedidoExterno', '')).strip()
+                        venda = str(row.get('Venda', '')).strip() if 'Venda' in df.columns else id_ext
+                        forma_pgto = str(row.get('FormaPagamento', '')).strip()
+                        operador = str(row.get('Operador', '')).strip()
+                        
                         VendaSWFast.objects.update_or_create(
                             chave_composta=row['ChaveComposta'],
                             defaults={
-                                'venda': str(row.get('Venda', '')),
-                                'forma_pagamento': str(row.get('FormaPagamento', '')),
-                                'aplicativo': str(row.get('Aplicativo', '')),
-                                'operador': str(row.get('Operador', '')),
-                                'data_hora_transacao': data_transacao,
-                                'id_pedido_externo': str(row.get('IdPedidoExterno', '')),
-                                'codigo_loja': str(row.get('CodigoLoja', '')),
-                                'valor_pagamento': row.get('ValorPagamento', 0.0),
-                                'nr_abertura': str(row.get('NrAbertura', '')),
+                                'codigo_loja': row['CodigoLoja'],
+                                'nr_abertura': row['NrAbertura'],
+                                'forma_pagamento': forma_pgto if forma_pgto.lower() != 'nan' else '',
+                                'aplicativo': app if app.lower() != 'nan' else '',
+                                'operador': operador if operador.lower() != 'nan' else '',
+                                'data_hora_transacao': row['DataHoraTransacao'] if pd.notna(row['DataHoraTransacao']) else None,
+                                'id_pedido_externo': id_ext if id_ext.lower() != 'nan' else '',
+                                'venda': venda if venda.lower() != 'nan' else '',
+                                'valor_pagamento': row['ValorPagamento']
                             }
                         )
                         contador += 1
@@ -217,6 +221,15 @@ def pagina_upload(request):
                         taxa_entrega = limpar_valor(linha.get("TAXA DE ENTREGA", 0))
                         return (vlr_itens - incentivo_loja + taxa_entrega) if integrado == "Sim" else (vlr_itens - incentivo_loja)
 
+                    # ==========================================
+                    # BUSCA DINÂMICA PELA COLUNA DE STATUS
+                    # ==========================================
+                    coluna_status = None
+                    for col in df.columns:
+                        if 'STATUS' in str(col).upper():
+                            coluna_status = col
+                            break
+
                     contador = 0
                     for _, row in df.iterrows():
                         id_pedido = str(row.get('ID DO PEDIDO', '')).strip()
@@ -227,6 +240,21 @@ def pagina_upload(request):
                         # Tratamento seguro de strings para evitar "nan"
                         formas_pgto = row.get('FORMAS DE PAGAMENTO')
                         origem_canc = row.get('ORIGEM DO CANCELAMENTO')
+
+                        # ------------------------------------------
+                        # LÓGICA DO STATUS BLINDADA APLICADA AO IFOOD
+                        # ------------------------------------------
+                        status_pedido = 'CONCLUIDO' # Valor padrão seguro
+                        
+                        if coluna_status:
+                            status_bruto = str(row.get(coluna_status, '')).strip().upper()
+                            if status_bruto != 'NAN' and status_bruto != '':
+                                status_pedido = status_bruto
+                                
+                        # Se vier escrito "CANCELADA" ou "CANCELADO", padroniza tudo
+                        if 'CANCELAD' in status_pedido:
+                            status_pedido = 'CANCELADO'
+                        # ------------------------------------------
 
                         PedidoIFood.objects.update_or_create(
                             id_pedido=id_pedido,
@@ -241,6 +269,9 @@ def pagina_upload(request):
                                 'formas_pagamento': str(formas_pgto) if pd.notna(formas_pgto) else '',
                                 'incentivo_ifood': limpar_valor(row.get('INCENTIVO PROMOCIONAL DO IFOOD', 0)),
                                 'origem_cancelamento': str(origem_canc) if pd.notna(origem_canc) else '',
+                                
+                                # Salva o status rastreado
+                                'status_pedido': status_pedido,
                             }
                         )
                         contador += 1
@@ -430,14 +461,22 @@ def buscar_dados_conferencia(codigo_loja, nr_abertura, incluir_dinheiro=False):
 
                 WHEN fp.especific_form_pgto = 'PIX' THEN 0 /* PIX MERCADO PAGO */
 
-                WHEN fp.especific_form_pgto = 'IFOOD' THEN COALESCE((
+                WHEN fp.especific_form_pgto in ('IFOOD ONLINE') THEN COALESCE((
                     SELECT SUM(i.vlr_pedido_sw) FROM importacoes_pedidoifood i
-                    WHERE LOWER(TRIM(i.id_pedido)) IN (
-                        SELECT LOWER(TRIM(sw5.id_pedido_externo)) FROM importacoes_vendaswfast sw5
-                        WHERE LOWER(sw5.aplicativo) = 'ifood' AND sw5.codigo_loja = ? AND sw5.nr_abertura = ?
-                    ) AND LOWER(TRIM(i.formas_pagamento)) NOT IN ('dinheiro') 
-                      AND i.id_restaurante = emp.ncad_ifood
-                      
+                    WHERE i.id_restaurante = emp.ncad_ifood
+                      AND LOWER(TRIM(i.formas_pagamento)) NOT IN ('dinheiro')
+                      AND EXISTS (
+                          /* O EXISTS é muito mais rápido que o IN, ele para de procurar assim que acha o par */
+                          SELECT 1 FROM importacoes_vendaswfast sw5
+                          JOIN tbl_formapagamento fp3 
+                              ON LOWER(TRIM(sw5.forma_pagamento)) = LOWER(TRIM(fp3.forma_pagamento))
+                              AND sw5.codigo_loja = fp3.codigo_loja
+                              AND LOWER(TRIM(sw5.aplicativo)) = LOWER(TRIM(fp3.aplicativo))
+                          WHERE sw5.codigo_loja = ? AND sw5.nr_abertura = ?
+                            AND LOWER(sw5.aplicativo) = 'ifood'
+                            AND LOWER(TRIM(sw5.id_pedido_externo)) = LOWER(TRIM(i.id_pedido))
+                            AND fp3.especific_form_pgto = fp.especific_form_pgto
+                      )
                 ), 0)
 
                 WHEN fp.especific_form_pgto = 'DINHEIRO' THEN COALESCE((
@@ -618,23 +657,42 @@ def exportar_analitico_excel(request):
         df_res = pd.DataFrame(columns=['Caixa Nº', 'Turno', 'Resumo (Forma Pagto)', 'Rel. Importados (Stone/iFood)', 'Rel. SWFast (Caixa)', 'Diferença'])
 
     # ==========================================
-    # 2. ABA: ANALÍTICO IFOOD (INTEGRADOS)
+    # 2. ABA: ANALÍTICO IFOOD (STATUS E REMOÇÃO DA DUPLICADA)
     # ==========================================
     query_ifood = """
         SELECT
             sw.data_hora_transacao AS "Data SWFast",
             sw.venda AS "Nº Venda SWFast",
             sw.id_pedido_externo AS "ID Pedido iFood",
-            MAX(sw.forma_pagamento) AS "Forma Pgto SWFast",
-            SUM(sw.valor_pagamento) AS "Valor SWFast",
+            
+            i.formas_pagamento AS "Forma Pgto iFood (Portal)",
+            GROUP_CONCAT(DISTINCT sw.forma_pagamento) AS "Forma Pgto SWFast",
+            
+            SUM(sw.valor_pagamento) AS "Valor SWFast (Total)",
+            
+            SUM(CASE WHEN fp.especific_form_pgto = 'IFOOD ONLINE' THEN sw.valor_pagamento ELSE 0 END) AS "Apenas ONLINE",
+            SUM(CASE WHEN fp.especific_form_pgto = 'IFOOD VOUCHER' THEN sw.valor_pagamento ELSE 0 END) AS "Apenas VOUCHER",
+            SUM(CASE WHEN fp.especific_form_pgto NOT IN ('IFOOD ONLINE', 'IFOOD VOUCHER') THEN sw.valor_pagamento ELSE 0 END) AS "Outros (Dinheiro/Cartão)",
+            
             COALESCE(i.vlr_pedido_sw, 0) AS "iFood Repasse",
             COALESCE(i.incentivo_ifood, 0) AS "iFood Incentivo",
-            COALESCE(i.vlr_pedido_sw, 0) AS "Total iFood (Conciliação)",
-            (COALESCE(i.vlr_pedido_sw, 0) - SUM(sw.valor_pagamento)) AS "Diferença"
+            
+            (COALESCE(i.vlr_pedido_sw, 0) - SUM(sw.valor_pagamento)) AS "Diferença",
+            
+            /* NOVA COLUNA TRAZENDO O STATUS */
+            COALESCE(i.status_pedido, 'CONCLUIDO') AS "Status iFood"
+            
         FROM importacoes_vendaswfast sw
         LEFT JOIN importacoes_pedidoifood i ON LOWER(TRIM(sw.id_pedido_externo)) = LOWER(TRIM(i.id_pedido))
+        
+        LEFT JOIN tbl_formapagamento fp 
+            ON LOWER(TRIM(sw.forma_pagamento)) = LOWER(TRIM(fp.forma_pagamento))
+            AND sw.codigo_loja = fp.codigo_loja
+            AND LOWER(TRIM(sw.aplicativo)) = LOWER(TRIM(fp.aplicativo))
+            
         WHERE sw.codigo_loja = ? AND sw.nr_abertura = ? AND LOWER(sw.aplicativo) = 'ifood'
-        GROUP BY sw.data_hora_transacao, sw.venda, sw.id_pedido_externo, i.vlr_pedido_sw, i.incentivo_ifood
+        
+        GROUP BY sw.data_hora_transacao, sw.venda, sw.id_pedido_externo, i.formas_pagamento, i.vlr_pedido_sw, i.incentivo_ifood, i.status_pedido
         ORDER BY sw.data_hora_transacao
     """
     df_ifood = pd.read_sql(query_ifood, conn, params=[codigo_loja, nr_abertura])
@@ -682,43 +740,78 @@ def exportar_analitico_excel(request):
     df_stone = pd.read_sql(query_stone, conn, params=[codigo_loja, codigo_loja, nr_abertura, codigo_loja, nr_abertura])
 
     # ==========================================
-    # 5. ABA: IFOOD NÃO INTEGRADO (FURO DE CAIXA)
+    # 5. ABA: IFOOD NÃO INTEGRADO (LÓGICA DO USUÁRIO - LISTA DE EXCLUSÃO)
     # ==========================================
     query_nao_integrado = """
         SELECT
-            i.data AS "Data no iFood",  /* AJUSTE SE O NOME DA COLUNA NO MODELS FOR DIFERENTE */
+            i.data AS "Data no iFood",  /* Lembre de checar se o seu campo chama data ou data_pedido */
             i.id_pedido AS "ID Pedido iFood",
             COALESCE(i.vlr_pedido_sw, 0) AS "iFood Repasse",
             COALESCE(i.incentivo_ifood, 0) AS "iFood Incentivo",
             (COALESCE(i.vlr_pedido_sw, 0) + COALESCE(i.incentivo_ifood, 0)) AS "Valor Total Oculto do Caixa"
         FROM importacoes_pedidoifood i
-        WHERE i.data BETWEEN 
-            (SELECT DATETIME(MIN(sw.dthr_abert_cx), '-30 minutes') FROM importacoes_vendaswfast sw WHERE sw.codigo_loja = ? AND sw.nr_abertura = ?)
-            AND 
-            (SELECT DATETIME(MAX(sw.dthr_encerr_cx), '+2 hours') FROM importacoes_vendaswfast sw WHERE sw.codigo_loja = ? AND sw.nr_abertura = ?)
-        AND LOWER(TRIM(i.id_pedido)) NOT IN (
-            SELECT LOWER(TRIM(sw2.id_pedido_externo))
-            FROM importacoes_vendaswfast sw2
-            WHERE sw2.id_pedido_externo IS NOT NULL AND sw2.id_pedido_externo != ''
-        )
+        WHERE 
+            /* 1. REGRA DE OURO: Faz a varredura em todos os IDs e lista apenas os que NÃO ESTÃO no SWFast */
+            LOWER(TRIM(i.id_pedido)) NOT IN (
+                SELECT LOWER(TRIM(sw2.id_pedido_externo))
+                FROM importacoes_vendaswfast sw2
+                WHERE sw2.id_pedido_externo IS NOT NULL AND sw2.id_pedido_externo != ''
+            )
+            
+            /* 2. ATRIBUIÇÃO DE CAIXA: A venda deve ter ocorrido a partir da abertura DESTE caixa... */
+            AND i.data >= (
+                SELECT MIN(sw_atual.data_hora_transacao) 
+                FROM importacoes_vendaswfast sw_atual 
+                WHERE sw_atual.codigo_loja = ? AND sw_atual.nr_abertura = ?
+            )
+            
+            /* 3. ... e ANTES da abertura do PRÓXIMO caixa (cobrindo todo o buraco de tempo entre eles) */
+            AND i.data < COALESCE(
+                (
+                    SELECT MIN(sw_prox.data_hora_transacao) 
+                    FROM importacoes_vendaswfast sw_prox 
+                    WHERE sw_prox.codigo_loja = ? 
+                    /* Converte para número para achar matematicamente o próximo caixa */
+                    AND CAST(sw_prox.nr_abertura AS INTEGER) > CAST(? AS INTEGER)
+                ),
+                '2099-12-31 23:59:59' /* Se for o último caixa do sistema e não houver próximo, não limita o tempo final */
+            )
         ORDER BY i.data
     """
     df_nao_integrado = pd.read_sql(query_nao_integrado, conn, params=[codigo_loja, nr_abertura, codigo_loja, nr_abertura])
 
-    conn.close()
-
     # ==========================================
-    # GERAÇÃO DO ARQUIVO EXCEL
+    # GERAÇÃO DO ARQUIVO EXCEL COM CORES
     # ==========================================
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        # AQUI INSERIMOS O RESUMO COMO A PRIMEIRA ABA
         df_res.to_excel(writer, sheet_name='Resumo do Caixa', index=False)
-        
         df_ifood.to_excel(writer, sheet_name='Analítico iFood (Integrados)', index=False)
         df_nao_integrado.to_excel(writer, sheet_name='iFood NÃO Integrado (Furos)', index=False)
         df_cartoes_sw.to_excel(writer, sheet_name='Cartões Passados no Caixa', index=False)
         df_stone.to_excel(writer, sheet_name='Transações Reais Stone', index=False)
+        
+        # --- APLICANDO A COR VERMELHA AOS CANCELADOS ---
+        worksheet_ifood = writer.sheets['Analítico iFood (Integrados)']
+        
+        # Cor de fundo vermelho claro para destacar
+        fundo_vermelho = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid')
+        
+        # Descobre qual é a posição da coluna "Status iFood"
+        coluna_status = None
+        for idx, col_name in enumerate(df_ifood.columns):
+            if col_name == "Status iFood":
+                coluna_status = idx + 1 # openpyxl usa índice começando em 1
+                break
+                
+        # Se achou a coluna de Status, varre as linhas e pinta se for diferente de CONCLUIDO
+        if coluna_status:
+            for row_idx in range(2, len(df_ifood) + 2): # Começa da linha 2 (ignorando o cabeçalho)
+                celula_status = worksheet_ifood.cell(row=row_idx, column=coluna_status).value
+                if celula_status and str(celula_status).upper() != 'CONCLUIDO':
+                    # Pinta todas as células daquela linha de vermelho
+                    for col_idx in range(1, len(df_ifood.columns) + 1):
+                        worksheet_ifood.cell(row=row_idx, column=col_idx).fill = fundo_vermelho
 
     output.seek(0)
     

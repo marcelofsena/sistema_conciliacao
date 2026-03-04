@@ -88,7 +88,7 @@ class PedidoIFood(models.Model):
     formas_pagamento = models.CharField(max_length=255, blank=True, null=True)
     incentivo_ifood = models.DecimalField(max_digits=15, decimal_places=2, default=0.0)
     origem_cancelamento = models.CharField(max_length=255, blank=True, null=True)
-    
+    status_pedido = models.CharField(max_length=100, null=True, blank=True, default='CONCLUIDO')
     conciliado = models.CharField(max_length=10, default='não')
 
     def __str__(self):
