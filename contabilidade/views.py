@@ -1881,8 +1881,11 @@ def importar_eventos_modelo(request):
             with transaction.atomic():
                 # Buscar todos os eventos modelo
                 eventos_modelo = TipoEvento.objects.filter(eh_modelo=True)
-                importados = 0
-                duplicados = 0
+                eventos_importados = 0
+                eventos_duplicados = 0
+                regras_importadas = 0
+                regras_duplicadas = 0
+                partidas_criadas = 0
 
                 for evento in eventos_modelo:
                     # Verificar se já existe na loja
@@ -1891,28 +1894,85 @@ def importar_eventos_modelo(request):
                     ).exists()
 
                     if tipo_evento_existe:
-                        duplicados += 1
+                        eventos_duplicados += 1
+                        tipo_evento = TipoEvento.objects.get(codigo=evento.codigo)
                     else:
                         # Criar novo tipo de evento
-                        TipoEvento.objects.create(
+                        tipo_evento = TipoEvento.objects.create(
                             codigo=evento.codigo,
                             descricao=evento.descricao,
                             modulo_origem=evento.modulo_origem,
                             ativo=True,
                             eh_modelo=False,  # Não é modelo, é instância
                         )
-                        importados += 1
+                        eventos_importados += 1
 
-                messages.success(
-                    request,
-                    f'✅ Eventos importados com sucesso!\n'
-                    f'{importados} novos eventos criados\n'
-                    f'{duplicados} eventos já existiam'
+                    # ===== IMPORTAR REGRAS CONTÁBEIS DO EVENTO =====
+                    # Buscar regras da Empresa Modelo para este evento
+                    empresa_modelo = Empresa.objects.get(id_empresa=4)
+                    regras_modelo = RegraContabil.objects.filter(
+                        loja=empresa_modelo,
+                        tipo_evento=evento,
+                        ativa=True
+                    )
+
+                    for regra_modelo in regras_modelo:
+                        # Verificar se regra já existe para esta loja
+                        regra_existe = RegraContabil.objects.filter(
+                            loja=loja,
+                            tipo_evento=tipo_evento,
+                            descricao=regra_modelo.descricao
+                        ).exists()
+
+                        if regra_existe:
+                            regras_duplicadas += 1
+                        else:
+                            # Criar regra para esta loja
+                            regra_nova = RegraContabil.objects.create(
+                                loja=loja,
+                                tipo_evento=tipo_evento,
+                                descricao=regra_modelo.descricao,
+                                ativa=True,
+                                eh_modelo=False
+                            )
+
+                            # Importar partidas da regra modelo
+                            for partida_modelo in regra_modelo.partidas.all():
+                                # Buscar conta analítica correspondente nesta loja
+                                try:
+                                    conta_loja = ContaAnalitica.objects.get(
+                                        loja=loja,
+                                        codigo_classificacao=partida_modelo.conta.codigo_classificacao
+                                    )
+                                    PartidaRegra.objects.create(
+                                        regra=regra_nova,
+                                        tipo=partida_modelo.tipo,
+                                        conta=conta_loja,
+                                        ordem=partida_modelo.ordem
+                                    )
+                                    partidas_criadas += 1
+                                except ContaAnalitica.DoesNotExist:
+                                    # Se conta não existe, avisa mas continua
+                                    pass
+
+                            regras_importadas += 1
+
+                # Montar mensagem de sucesso detalhada
+                msg = (
+                    f'✅ Importação Completa com Sucesso!\n\n'
+                    f'EVENTOS:\n'
+                    f'  ✓ {eventos_importados} novos criados\n'
+                    f'  ⚠ {eventos_duplicados} já existiam\n\n'
+                    f'REGRAS CONTÁBEIS:\n'
+                    f'  ✓ {regras_importadas} novas criadas\n'
+                    f'  ⚠ {regras_duplicadas} já existiam\n'
+                    f'  ✓ {partidas_criadas} partidas mapeadas'
                 )
+                messages.success(request, msg)
         except Exception as e:
             messages.error(
                 request,
-                f'❌ Erro ao importar eventos: {str(e)}'
+                f'❌ Erro ao importar: {str(e)}'
             )
 
         return redirect('eventos_operacionais')

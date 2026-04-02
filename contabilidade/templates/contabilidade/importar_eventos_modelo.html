@@ -37,28 +37,40 @@
         </div>
         {% endif %}
 
-        <!-- Informações sobre eventos -->
+        <!-- O que será importado -->
         <div style="background: #f5f5f5; padding: 1.5rem; border-radius: 4px; margin-bottom: 1.5rem;">
-          <div style="font-size: 0.9rem; font-weight: 600; color: #333; margin-bottom: 1rem;">📋 Eventos a Importar:</div>
-          <ul style="margin: 0; padding-left: 1.5rem; font-size: 0.9rem; color: #666;">
-            <li><strong>RH:</strong> Folha de Pagamento, Benefícios de Funcionários</li>
-            <li><strong>Compras:</strong> Alimentos e Bebidas, Pagamento de Fornecedor</li>
-            <li><strong>Vendas:</strong> Venda de Refeições, Devolução de Cliente</li>
-            <li><strong>Despesas:</strong> Material de Consumo, Aluguel, Utilidades</li>
-            <li><strong>Imobilizado:</strong> Compra de Equipamento para Cozinha</li>
-            <li><strong>Ajustes:</strong> Depreciação Mensal</li>
-            <li><strong>Financeira:</strong> Aplicação em Fundo Renda Fixa, Receita de Juros</li>
-          </ul>
+          <div style="font-size: 0.9rem; font-weight: 600; color: #333; margin-bottom: 1rem;">📦 O Que Será Importado:</div>
+
+          <div style="margin-bottom: 1rem;">
+            <div style="color: #1976d2; font-weight: 600; margin-bottom: 0.5rem;">📋 13 Eventos de Restaurante</div>
+            <ul style="margin: 0; padding-left: 1.5rem; font-size: 0.85rem; color: #666;">
+              <li><strong>RH:</strong> Folha de Pagamento, Benefícios</li>
+              <li><strong>Compras:</strong> Alimentos e Bebidas, Pagamento Fornecedor</li>
+              <li><strong>Vendas:</strong> Venda de Refeições, Devolução</li>
+              <li><strong>Despesas:</strong> Material, Aluguel, Utilidades</li>
+              <li><strong>Imobilizado:</strong> Equipamento Cozinha</li>
+              <li><strong>Ajustes:</strong> Depreciação</li>
+              <li><strong>Financeira:</strong> Aplicação, Juros</li>
+            </ul>
+          </div>
+
+          <div style="padding-top: 1rem; border-top: 1px solid #ddd;">
+            <div style="color: #388e3c; font-weight: 600; margin-bottom: 0.5rem;">🔀 13 Regras Contábeis com 54 Partidas</div>
+            <p style="margin: 0; font-size: 0.85rem; color: #666;">
+              Cada evento traz sua regra pré-configurada com os mapeamentos corretos de débitos e créditos.
+              <strong>Tudo em um único processo!</strong>
+            </p>
+          </div>
         </div>
 
-        <!-- Resumo de eventos -->
+        <!-- Resumo -->
         <div style="background: #e8f5e9; padding: 1rem; border-radius: 4px; color: #2e7d32; margin-bottom: 1.5rem;">
           <div style="font-size: 0.9rem;">
-            <strong>Total:</strong> 13 eventos padrão de restaurante
+            <strong>✓ Total:</strong> 13 eventos + 13 regras + 54 partidas
           </div>
           {% if eventos_existentes > 0 %}
           <div style="font-size: 0.85rem; margin-top: 0.5rem; color: #558b2f;">
-            {{ eventos_existentes }} evento(s) já criado(s)
+            {{ eventos_existentes }} evento(s) já criado(s) - serão pulados
           </div>
           {% endif %}
         </div>
@@ -89,7 +101,7 @@
           Cancelar
         </a>
         <button type="submit" class="btn btn--primary">
-          Importar {{ total_eventos }} Eventos
+          Importar Tudo (Eventos + Regras)
         </button>
       </div>
     </form>
