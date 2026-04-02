@@ -43,6 +43,8 @@ urlpatterns = [
     # Lançamentos Contábeis
     path('lancamentos/',                        views.lancamentos,           name='lancamentos'),
     path('lancamentos/novo/',                   views.lancamento_criar,      name='lancamento_criar'),
+    path('lancamentos/com-regra/',              views.lancamento_com_regra,  name='lancamento_com_regra'),
+    path('lancamentos/com-regra/<int:tipo_evento_id>/', views.lancamento_com_regra, name='lancamento_com_regra_tipo'),
     path('lancamentos/<int:pk>/',               views.lancamento_detalhe,    name='lancamento_detalhe'),
 
     # Simulação de Lançamentos

@@ -1,0 +1,447 @@
+{% extends 'base.html' %}
+
+{% block title %}Novo Lançamento (com Regra) — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}
+  <a href="{% url 'lancamentos' %}">Lançamentos</a> / Novo com Regra
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">
+      {% if tipo_evento %}
+        📋 {{ tipo_evento.codigo }}
+      {% else %}
+        📋 Novo Lançamento (com Regra)
+      {% endif %}
+    </h1>
+    <p class="page-header__sub">
+      {% if tipo_evento %}
+        {{ tipo_evento.descricao }}
+      {% else %}
+        Selecione um tipo de evento para pré-preencher as partidas
+      {% endif %}
+    </p>
+  </div>
+</div>
+
+{% if messages %}
+  {% for message in messages %}
+  <div class="alert alert--{{ message.tags }}">
+    {{ message }}
+  </div>
+  {% endfor %}
+{% endif %}
+
+{% if tipo_evento and regra %}
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem;">
+  <!-- Info Evento -->
+  <div class="card">
+    <div class="card__header">
+      <h3 class="card__title">Evento</h3>
+    </div>
+    <div class="card__body">
+      <div style="margin-bottom: 1rem;">
+        <strong>Código:</strong> {{ tipo_evento.codigo }}<br>
+        <strong>Módulo:</strong> <span class="badge badge--blue">{{ tipo_evento.modulo_origem }}</span><br>
+        <strong>Descrição:</strong> {{ tipo_evento.descricao }}
+      </div>
+    </div>
+  </div>
+
+  <!-- Info Regra -->
+  <div class="card">
+    <div class="card__header">
+      <h3 class="card__title">Regra Contábil</h3>
+    </div>
+    <div class="card__body">
+      <div style="margin-bottom: 1rem;">
+        <strong>Partidas:</strong> {{ regra.partidas.count }}<br>
+        {% with debitos=regra.get_debitos|length creditos=regra.get_creditos|length %}
+        <strong>Débitos:</strong> {{ debitos }}<br>
+        <strong>Créditos:</strong> {{ creditos }}
+        {% endwith %}
+        <strong>Status:</strong> <span class="badge badge--green">{% if regra.ativa %}Ativa{% else %}Inativa{% endif %}</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tabela de Partidas Pré-preenchidas -->
+<div class="card" style="margin-bottom: 2rem;">
+  <div class="card__header">
+    <h3 class="card__title">Partidas da Regra</h3>
+  </div>
+  <div class="card__body">
+    <table style="width: 100%; border-collapse: collapse;">
+      <thead>
+        <tr style="border-bottom: 2px solid #e0e0e0;">
+          <th style="text-align: left; padding: 0.75rem;">Ordem</th>
+          <th style="text-align: left; padding: 0.75rem;">Tipo</th>
+          <th style="text-align: left; padding: 0.75rem;">Conta</th>
+          <th style="text-align: left; padding: 0.75rem;">Descrição</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for partida in regra.partidas.all %}
+        <tr style="border-bottom: 1px solid #f0f0f0;">
+          <td style="padding: 0.75rem;">{{ partida.ordem }}</td>
+          <td style="padding: 0.75rem;">
+            <span class="badge {% if partida.tipo == 'D' %}badge--red{% else %}badge--green{% endif %}">
+              {% if partida.tipo == 'D' %}DÉBITO{% else %}CRÉDITO{% endif %}
+            </span>
+          </td>
+          <td style="padding: 0.75rem;">
+            <code style="background: #f5f5f5; padding: 0.25rem 0.5rem; border-radius: 3px;">
+              {{ partida.conta.codigo_classificacao }}
+            </code>
+          </td>
+          <td style="padding: 0.75rem;">{{ partida.conta.nome }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- Formulário -->
+<div class="card">
+  <div class="card__header">
+    <h3 class="card__title">Dados do Lançamento</h3>
+  </div>
+  <div class="card__body">
+    <form method="POST" id="lanc-form">
+      {% csrf_token %}
+
+      <!-- Campos principais -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
+        <div>
+          <label for="data_lancamento" class="form-label">Data do Lançamento</label>
+          {{ form.data_lancamento }}
+        </div>
+        <div>
+          <label for="tipo" class="form-label">Tipo de Lançamento</label>
+          {{ form.tipo }}
+        </div>
+      </div>
+
+      <div style="margin-bottom: 2rem;">
+        <label for="historico" class="form-label">Histórico / Descrição</label>
+        {{ form.historico }}
+      </div>
+
+      <!-- Partidas -->
+      <div style="margin-bottom: 2rem;">
+        <h4 style="margin-bottom: 1rem; color: #333;">Partidas</h4>
+
+        <div id="partidas-container">
+          {% for partida in partidas_iniciais %}
+          <div class="partida-row" style="display: grid; grid-template-columns: 60px 1fr 120px 150px 150px 50px; gap: 1rem; margin-bottom: 1rem; align-items: end; background: #f9f9f9; padding: 1rem; border-radius: 4px;">
+            <!-- Tipo -->
+            <div>
+              <label style="font-size: 0.85rem; color: #666;">Tipo</label>
+              <select name="partida_tipo" class="form-control" required style="font-weight: bold;">
+                <option value="">—</option>
+                <option value="D" {% if partida.tipo == 'D' %}selected{% endif %}>DÉBITO</option>
+                <option value="C" {% if partida.tipo == 'C' %}selected{% endif %}>CRÉDITO</option>
+              </select>
+            </div>
+
+            <!-- Conta -->
+            <div>
+              <label style="font-size: 0.85rem; color: #666;">Conta Analítica</label>
+              <select name="partida_conta" class="form-control" required>
+                <option value="">Selecione...</option>
+                {% for conta in contas %}
+                  <option value="{{ conta.id }}" {% if conta.id == partida.conta_id %}selected{% endif %}>
+                    {{ conta.codigo_classificacao }} - {{ conta.nome }}
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <!-- Valor -->
+            <div>
+              <label style="font-size: 0.85rem; color: #666;">Valor</label>
+              <input type="number" name="partida_valor" class="form-control" step="0.01" min="0"
+                     value="{{ partida.valor }}" placeholder="0.00" required>
+            </div>
+
+            <!-- Histórico -->
+            <div>
+              <label style="font-size: 0.85rem; color: #666;">Histórico</label>
+              <input type="text" name="partida_historico" class="form-control"
+                     value="{{ partida.historico }}" placeholder="Opcional">
+            </div>
+
+            <!-- Centro de Custo -->
+            <div>
+              <label style="font-size: 0.85rem; color: #666;">Centro de Custo</label>
+              <input type="text" name="partida_centro_custo" class="form-control"
+                     value="{{ partida.centro_custo }}" placeholder="Opcional">
+            </div>
+
+            <!-- Remover -->
+            <div style="text-align: center;">
+              <button type="button" class="btn btn--outline btn--sm" onclick="removerPartida(this)">×</button>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+
+        <!-- Botão Adicionar Partida -->
+        <button type="button" class="btn btn--outline" onclick="adicionarPartida()">
+          + Adicionar Partida
+        </button>
+      </div>
+
+      <!-- Resumo -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 2rem; background: #f0f0f0; padding: 1rem; border-radius: 4px;">
+        <div>
+          <strong>Total Débitos:</strong>
+          <div id="total-debitos" style="font-size: 1.2rem; color: #d32f2f;">R$ 0,00</div>
+        </div>
+        <div>
+          <strong>Total Créditos:</strong>
+          <div id="total-creditos" style="font-size: 1.2rem; color: #388e3c;">R$ 0,00</div>
+        </div>
+        <div>
+          <strong>Diferença:</strong>
+          <div id="total-diferenca" style="font-size: 1.2rem; color: #ff9800;">R$ 0,00</div>
+        </div>
+      </div>
+
+      <!-- Botões -->
+      <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+        <a href="{% url 'lancamentos' %}" class="btn btn--outline">Cancelar</a>
+        <button type="submit" class="btn btn--primary">Criar Lançamento</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+.form-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  color: #333;
+  font-size: 0.9rem;
+}
+
+.form-control {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.form-control:focus {
+  outline: none;
+  border-color: #1976d2;
+  box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
+}
+
+.card {
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.card__header {
+  padding: 1.5rem;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.card__title {
+  margin: 0;
+  font-size: 1.125rem;
+  color: #333;
+}
+
+.card__body {
+  padding: 1.5rem;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge--blue {
+  background: #e3f2fd;
+  color: #1976d2;
+}
+
+.badge--green {
+  background: #e8f5e9;
+  color: #388e3c;
+}
+
+.badge--red {
+  background: #ffebee;
+  color: #d32f2f;
+}
+
+.btn {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.btn--primary {
+  background: #1976d2;
+  color: white;
+}
+
+.btn--primary:hover {
+  background: #1565c0;
+}
+
+.btn--outline {
+  background: transparent;
+  border: 1px solid #ccc;
+  color: #333;
+}
+
+.btn--outline:hover {
+  background: #f5f5f5;
+}
+
+.btn--sm {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2rem 0;
+  border-bottom: 1px solid #e0e0e0;
+  margin-bottom: 2rem;
+}
+
+.page-header__title {
+  margin: 0 0 0.5rem 0;
+  font-size: 2rem;
+  color: #333;
+}
+
+.page-header__sub {
+  margin: 0;
+  color: #999;
+  font-size: 0.95rem;
+}
+
+.alert {
+  padding: 1rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+}
+
+.alert--success {
+  background: #d4edda;
+  border: 1px solid #c3e6cb;
+  color: #155724;
+}
+
+.alert--error {
+  background: #f8d7da;
+  border: 1px solid #f5c6cb;
+  color: #721c24;
+}
+</style>
+
+<script>
+function calcularTotais() {
+  const partidas = document.querySelectorAll('.partida-row');
+  let totalD = 0, totalC = 0;
+
+  partidas.forEach(row => {
+    const tipo = row.querySelector('[name="partida_tipo"]').value;
+    const valor = parseFloat(row.querySelector('[name="partida_valor"]').value || 0);
+
+    if (tipo === 'D') totalD += valor;
+    if (tipo === 'C') totalC += valor;
+  });
+
+  document.getElementById('total-debitos').textContent = `R$ ${totalD.toFixed(2).replace('.', ',')}`;
+  document.getElementById('total-creditos').textContent = `R$ ${totalC.toFixed(2).replace('.', ',')}`;
+
+  const diff = Math.abs(totalD - totalC);
+  const cor = diff < 0.01 ? '#388e3c' : '#ff9800';
+  document.getElementById('total-diferenca').textContent = `R$ ${diff.toFixed(2).replace('.', ',')}`;
+  document.getElementById('total-diferenca').style.color = cor;
+}
+
+function adicionarPartida() {
+  const container = document.getElementById('partidas-container');
+  const row = document.createElement('div');
+  row.className = 'partida-row';
+  row.style.cssText = 'display: grid; grid-template-columns: 60px 1fr 120px 150px 150px 50px; gap: 1rem; margin-bottom: 1rem; align-items: end; background: #f9f9f9; padding: 1rem; border-radius: 4px;';
+
+  const contas = {{ contas|safe }};
+  const contasHtml = contas.map(c => `<option value="${c.id}">${c.codigo_classificacao} - ${c.nome}</option>`).join('');
+
+  row.innerHTML = `
+    <div>
+      <label style="font-size: 0.85rem; color: #666;">Tipo</label>
+      <select name="partida_tipo" class="form-control" required>
+        <option value="">—</option>
+        <option value="D">DÉBITO</option>
+        <option value="C">CRÉDITO</option>
+      </select>
+    </div>
+    <div>
+      <label style="font-size: 0.85rem; color: #666;">Conta Analítica</label>
+      <select name="partida_conta" class="form-control" required>
+        <option value="">Selecione...</option>
+        ${contasHtml}
+      </select>
+    </div>
+    <div>
+      <label style="font-size: 0.85rem; color: #666;">Valor</label>
+      <input type="number" name="partida_valor" class="form-control" step="0.01" min="0" placeholder="0.00" required>
+    </div>
+    <div>
+      <label style="font-size: 0.85rem; color: #666;">Histórico</label>
+      <input type="text" name="partida_historico" class="form-control" placeholder="Opcional">
+    </div>
+    <div>
+      <label style="font-size: 0.85rem; color: #666;">Centro de Custo</label>
+      <input type="text" name="partida_centro_custo" class="form-control" placeholder="Opcional">
+    </div>
+    <div style="text-align: center;">
+      <button type="button" class="btn btn--outline btn--sm" onclick="removerPartida(this)">×</button>
+    </div>
+  `;
+
+  container.appendChild(row);
+  calcularTotais();
+}
+
+function removerPartida(btn) {
+  btn.closest('.partida-row').remove();
+  calcularTotais();
+}
+
+// Calcular totais ao carregar e quando mudar valores
+document.addEventListener('DOMContentLoaded', function() {
+  calcularTotais();
+
+  document.getElementById('partidas-container').addEventListener('change', calcularTotais);
+  document.getElementById('partidas-container').addEventListener('input', calcularTotais);
+});
+</script>
+{% endblock %}

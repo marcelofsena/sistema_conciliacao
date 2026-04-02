@@ -1922,3 +1922,177 @@ def importar_eventos_modelo(request):
         'eventos_existentes': eventos_existentes,
         'total_eventos': 13,
     })
+
+
+# ==========================================
+# LANÇAMENTO COM REGRA CONTÁBIL PRÉ-PREENCHIDA
+# ==========================================
+
+@login_required(login_url='login')
+def lancamento_com_regra(request, tipo_evento_id=None):
+    """
+    Cria um lançamento contábil pré-preenchido com a regra de um tipo de evento.
+
+    GET: ?tipo_evento_id=X
+    Carrega a regra do evento e pré-preenche as partidas (débitos + créditos).
+    """
+    lojas_user = request.user.perfil.get_lojas()
+    lojas_ids = lojas_user.values_list('id_empresa', flat=True)
+
+    loja_id = request.session.get('loja_id')
+    loja = get_object_or_404(Empresa, id_empresa=loja_id, id_empresa__in=lojas_ids) if loja_id else None
+
+    # Buscar tipo de evento (via GET ou URL)
+    tipo_evento = None
+    regra = None
+    partidas_iniciais = []
+
+    if tipo_evento_id:
+        try:
+            tipo_evento = TipoEvento.objects.get(pk=tipo_evento_id)
+            # Buscar regra da loja
+            regra = RegraContabil.objects.filter(
+                loja=loja,
+                tipo_evento=tipo_evento,
+                ativa=True
+            ).first()
+
+            if regra:
+                # Pré-preencher com as partidas da regra
+                for partida_regra in regra.partidas.select_related('conta').order_by('ordem'):
+                    partidas_iniciais.append({
+                        'conta_id': partida_regra.conta_id,
+                        'tipo': partida_regra.tipo,
+                        'valor': '0.00',  # Usuário preencherá
+                        'historico': f'{tipo_evento.codigo}',
+                        'centro_custo': '',
+                    })
+        except TipoEvento.DoesNotExist:
+            messages.error(request, 'Tipo de evento não encontrado.')
+            return redirect('lancamento_criar')
+
+    # Contas analíticas da loja
+    contas = []
+    if loja:
+        contas = list(
+            ContaAnalitica.objects
+            .filter(loja=loja, aceita_lancamento=True)
+            .order_by('codigo_classificacao')
+            .values('id', 'codigo_reduzido', 'codigo_classificacao', 'nome', 'centro_custo')
+        )
+
+    # Inicializar histórico
+    initial = {}
+    if tipo_evento:
+        initial['historico'] = f'{tipo_evento.codigo} - {tipo_evento.descricao}'
+        initial['tipo'] = 'NORMAL'
+
+    form = LancamentoContabilForm(request.POST or None, loja=loja, initial=initial)
+
+    if request.method == 'POST' and form.is_valid():
+        # Coleta as partidas do POST
+        contas_ids  = request.POST.getlist('partida_conta')
+        tipos_dc    = request.POST.getlist('partida_tipo')
+        valores     = request.POST.getlist('partida_valor')
+        historicos  = request.POST.getlist('partida_historico')
+        centros     = request.POST.getlist('partida_centro_custo')
+
+        # Valida: mínimo 2 partidas
+        partidas_data = []
+        erros = []
+        for i, (cid, tdc, val, hist, cc) in enumerate(
+                zip(contas_ids, tipos_dc, valores, historicos, centros), start=1):
+            if not cid or not tdc or not val:
+                continue
+            try:
+                v = Decimal(val.replace(',', '.'))
+                if v <= 0:
+                    raise ValueError
+            except (ValueError, Exception):
+                erros.append(f'Partida {i}: valor inválido.')
+                continue
+            partidas_data.append({
+                'conta_id': int(cid),
+                'tipo': tdc,
+                'valor': v,
+                'historico_complementar': hist,
+                'centro_custo': cc,
+            })
+
+        if len(partidas_data) < 2:
+            erros.append('O lançamento precisa de no mínimo 2 partidas.')
+
+        total_d = sum(p['valor'] for p in partidas_data if p['tipo'] == 'D')
+        total_c = sum(p['valor'] for p in partidas_data if p['tipo'] == 'C')
+        if not erros and total_d != total_c:
+            erros.append(
+                f'Débitos (R$ {total_d:.2f}) ≠ Créditos (R$ {total_c:.2f}). '
+                'O lançamento deve ser equilibrado.'
+            )
+
+        if erros:
+            for e in erros:
+                messages.error(request, e)
+        else:
+            with transaction.atomic():
+                # Próximo número da loja
+                ultimo = (
+                    LancamentoContabil.objects
+                    .filter(loja=loja)
+                    .order_by('-numero')
+                    .values_list('numero', flat=True)
+                    .first()
+                ) or 0
+
+                # Determina o período contábil pela data informada
+                data_lanc = form.cleaned_data['data_lancamento']
+                periodo = PeriodoContabil.objects.filter(
+                    loja=loja,
+                    ano=data_lanc.year,
+                    mes=data_lanc.month,
+                    status__in=['ABERTO', 'REABERTO']
+                ).first()
+
+                if not periodo:
+                    messages.error(
+                        request,
+                        f'Nenhum período aberto para {data_lanc.strftime("%m/%Y")}. '
+                        'Crie ou reabra o período antes de lançar.'
+                    )
+                else:
+                    # Criar lançamento
+                    lancamento = LancamentoContabil.objects.create(
+                        loja=loja,
+                        numero=ultimo + 1,
+                        data_lancamento=data_lanc,
+                        historico=form.cleaned_data['historico'],
+                        tipo=form.cleaned_data['tipo'],
+                        usuario=request.user,
+                        periodo=periodo,
+                    )
+
+                    # Criar partidas
+                    for pd in partidas_data:
+                        PartidaLancamento.objects.create(
+                            lancamento=lancamento,
+                            conta_id=pd['conta_id'],
+                            tipo=pd['tipo'],
+                            valor=pd['valor'],
+                            historico_complementar=pd['historico_complementar'],
+                            centro_custo=pd['centro_custo'],
+                        )
+
+                    messages.success(
+                        request,
+                        f'Lançamento #{lancamento.numero} criado com sucesso!'
+                    )
+                    return redirect('lancamento_detalhe', lancamento.pk)
+
+    return render(request, 'contabilidade/lancamento_com_regra.html', {
+        'loja': loja,
+        'tipo_evento': tipo_evento,
+        'regra': regra,
+        'partidas_iniciais': partidas_iniciais,
+        'contas': contas,
+        'form': form,
+    })

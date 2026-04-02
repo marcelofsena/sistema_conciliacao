@@ -81,6 +81,9 @@
             </td>
             <td>
               <div class="d-flex gap-1">
+                {% if regra.ativa %}
+                  <a href="{% url 'lancamento_com_regra_tipo' regra.tipo_evento.pk %}" class="btn btn--success btn--sm" title="Criar lançamento com esta regra">💾</a>
+                {% endif %}
                 <a href="{% url 'regra_contabil_editar' regra.pk %}" class="btn btn--outline btn--sm">✏️</a>
                 <form method="POST" action="{% url 'regra_contabil_toggle' regra.pk %}" style="display:inline;">
                   {% csrf_token %}
