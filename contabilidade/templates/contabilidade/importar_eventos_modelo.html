@@ -1,0 +1,233 @@
+{% extends 'base.html' %}
+
+{% block title %}Importar Eventos de Restaurante — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}Importar Eventos{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">Importar Eventos de Restaurante</h1>
+    <p class="page-header__sub">Importar 13 eventos padrão para restaurante com múltiplos débitos e créditos</p>
+  </div>
+</div>
+
+{% if messages %}
+  {% for message in messages %}
+  <div class="alert alert--{{ message.tags }}">
+    {{ message }}
+  </div>
+  {% endfor %}
+{% endif %}
+
+<div style="max-width: 600px;">
+  <!-- Cartao central com informacoes e formulario -->
+  <div>
+    <form method="POST" class="card">
+      {% csrf_token %}
+      <div class="card__header">
+        <h3 class="card__title">Eventos da Empresa Modelo</h3>
+      </div>
+      <div class="card__body">
+        <!-- Loja destino (apenas exibicao, nao editavel) -->
+        {% if loja %}
+        <div style="padding: 1.5rem; background: #e3f2fd; border-radius: 4px; border-left: 4px solid #1976d2; margin-bottom: 1.5rem;">
+          <div style="font-size: 0.85rem; color: #0d47a1; margin-bottom: 0.5rem;">IMPORTANDO PARA</div>
+          <div style="font-size: 1.2rem; font-weight: 600; color: #1565c0;">{{ loja.descricao }}</div>
+          <small style="color: #555;">ID: {{ loja.id_empresa }}</small>
+        </div>
+        {% endif %}
+
+        <!-- Informações sobre eventos -->
+        <div style="background: #f5f5f5; padding: 1.5rem; border-radius: 4px; margin-bottom: 1.5rem;">
+          <div style="font-size: 0.9rem; font-weight: 600; color: #333; margin-bottom: 1rem;">📋 Eventos a Importar:</div>
+          <ul style="margin: 0; padding-left: 1.5rem; font-size: 0.9rem; color: #666;">
+            <li><strong>RH:</strong> Folha de Pagamento, Benefícios de Funcionários</li>
+            <li><strong>Compras:</strong> Alimentos e Bebidas, Pagamento de Fornecedor</li>
+            <li><strong>Vendas:</strong> Venda de Refeições, Devolução de Cliente</li>
+            <li><strong>Despesas:</strong> Material de Consumo, Aluguel, Utilidades</li>
+            <li><strong>Imobilizado:</strong> Compra de Equipamento para Cozinha</li>
+            <li><strong>Ajustes:</strong> Depreciação Mensal</li>
+            <li><strong>Financeira:</strong> Aplicação em Fundo Renda Fixa, Receita de Juros</li>
+          </ul>
+        </div>
+
+        <!-- Resumo de eventos -->
+        <div style="background: #e8f5e9; padding: 1rem; border-radius: 4px; color: #2e7d32; margin-bottom: 1.5rem;">
+          <div style="font-size: 0.9rem;">
+            <strong>Total:</strong> 13 eventos padrão de restaurante
+          </div>
+          {% if eventos_existentes > 0 %}
+          <div style="font-size: 0.85rem; margin-top: 0.5rem; color: #558b2f;">
+            {{ eventos_existentes }} evento(s) já criado(s)
+          </div>
+          {% endif %}
+        </div>
+
+        <!-- Aviso se eventos existem -->
+        {% if eventos_existentes > 0 %}
+        <div style="background: #fff3cd; padding: 1rem; border-radius: 4px; color: #856404; margin-bottom: 1.5rem;">
+          <strong>⚠️ Aviso:</strong> Alguns eventos já foram criados. A importação criará apenas os novos.
+        </div>
+
+        <div class="form-group">
+          <label>
+            <input type="checkbox" name="confirm_duplicate" value="1" required>
+            <strong>Confirmo que desejo prosseguir com a importação</strong>
+          </label>
+          <small class="text-muted" style="display: block; margin-left: 1.5rem; margin-top: 0.25rem;">
+            Eventos duplicados serão ignorados.
+          </small>
+        </div>
+        {% else %}
+        <div style="background: #e8f5e9; padding: 1rem; border-radius: 4px; color: #2e7d32;">
+          <strong>✓ Pronto!</strong> Todos os 13 eventos serão importados para {{ loja.descricao }}.
+        </div>
+        {% endif %}
+      </div>
+      <div class="card__footer">
+        <a href="{% url 'eventos_operacionais' %}" class="btn btn--outline">
+          Cancelar
+        </a>
+        <button type="submit" class="btn btn--primary">
+          Importar {{ total_eventos }} Eventos
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Info box com detalhes dos eventos -->
+<div class="card" style="margin-top: 2rem; background: #f9f9f9;">
+  <div class="card__body" style="font-size: 0.9rem; color: #666;">
+    <strong>Padrão de Eventos:</strong>
+    <ul style="margin: 0.5rem 0; padding-left: 1.5rem;">
+      <li>✓ Múltiplos Débitos e Créditos (N:M)</li>
+      <li>✓ Cenários reais com valores de exemplo</li>
+      <li>✓ Baseados em template "Restaurante Brasileiro"</li>
+      <li>✓ Prontos para regras contábeis</li>
+      <li>✓ Após importar, você poderá criar regras para cada evento</li>
+    </ul>
+  </div>
+</div>
+
+<style>
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2rem 0;
+  border-bottom: 1px solid #e0e0e0;
+  margin-bottom: 2rem;
+}
+
+.page-header__title {
+  margin: 0 0 0.5rem 0;
+  font-size: 2rem;
+  color: #333;
+}
+
+.page-header__sub {
+  margin: 0;
+  color: #999;
+  font-size: 0.95rem;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.card__header {
+  padding: 1.5rem;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.card__title {
+  margin: 0;
+  font-size: 1.125rem;
+  color: #333;
+}
+
+.card__body {
+  padding: 1.5rem;
+  flex: 1;
+}
+
+.card__footer {
+  padding: 1.5rem;
+  border-top: 1px solid #f0f0f0;
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+}
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.text-muted {
+  display: block;
+  color: #666;
+  font-size: 0.85rem;
+  margin-top: 0.25rem;
+}
+
+.btn {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.btn--primary {
+  background: #1976d2;
+  color: white;
+}
+
+.btn--primary:hover {
+  background: #1565c0;
+}
+
+.btn--outline {
+  background: transparent;
+  border: 1px solid #ccc;
+  color: #333;
+}
+
+.btn--outline:hover {
+  background: #f5f5f5;
+}
+
+.alert {
+  padding: 1rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+}
+
+.alert--success {
+  background: #d4edda;
+  border: 1px solid #c3e6cb;
+  color: #155724;
+}
+
+.alert--error {
+  background: #f8d7da;
+  border: 1px solid #f5c6cb;
+  color: #721c24;
+}
+</style>
+{% endblock %}

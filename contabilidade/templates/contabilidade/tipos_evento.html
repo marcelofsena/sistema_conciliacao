@@ -1,0 +1,90 @@
+{% extends 'base.html' %}
+
+{% block title %}Tipos de Evento — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}Tipos de Evento{% endblock %}
+
+{% block topbar_actions %}
+  <a href="{% url 'tipo_evento_criar' %}" class="btn btn--primary btn--sm">+ Novo Tipo</a>
+  <a href="{% url 'importar_eventos_modelo' %}" class="btn btn--secondary btn--sm">📥 Eventos de Restaurante</a>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">⚡ Tipos de Evento</h1>
+    <p class="page-header__sub">Catálogo de eventos operacionais que disparam lançamentos contábeis automáticos.</p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Código do Evento</th>
+          <th>Descrição</th>
+          <th>Módulo de Origem</th>
+          <th>Regras</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ev in eventos %}
+        <tr>
+          <td>
+            <code class="badge badge--gray" style="font-size:12px; letter-spacing:.5px;">{{ ev.codigo }}</code>
+          </td>
+          <td>{{ ev.descricao }}</td>
+          <td>
+            <span class="badge
+              {% if ev.modulo_origem == 'CAIXA' %}badge--blue
+              {% elif ev.modulo_origem == 'ESTOQUE' %}badge--amber
+              {% elif ev.modulo_origem == 'FINANCEIRO' %}badge--green
+              {% else %}badge--purple{% endif %}">
+              {{ ev.modulo_origem }}
+            </span>
+          </td>
+          <td class="text-muted text-sm">
+            {{ ev.regras.count }} regra{{ ev.regras.count|pluralize }}
+          </td>
+          <td>
+            {% if ev.ativo %}
+              <span class="badge badge--green">Ativo</span>
+            {% else %}
+              <span class="badge badge--red">Inativo</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="d-flex gap-1">
+              <a href="{% url 'tipo_evento_editar' ev.pk %}" class="btn btn--outline btn--sm">✏️ Editar</a>
+              <form method="POST" action="{% url 'tipo_evento_toggle' ev.pk %}" style="display:inline;">
+                {% csrf_token %}
+                <button type="submit"
+                        class="btn btn--sm {% if ev.ativo %}btn--ghost{% else %}btn--success{% endif %}"
+                        data-confirm="{% if ev.ativo %}Desativar {{ ev.codigo }}?{% else %}Ativar {{ ev.codigo }}?{% endif %}">
+                  {% if ev.ativo %}Desativar{% else %}Ativar{% endif %}
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="6">
+            <div class="empty-state">
+              <div class="empty-state__icon">⚡</div>
+              <div class="empty-state__title">Nenhum tipo de evento cadastrado</div>
+              <div class="empty-state__desc">
+                Tipos de evento definem o catálogo de ações que geram lançamentos contábeis.
+              </div>
+              <a href="{% url 'tipo_evento_criar' %}" class="btn btn--primary">+ Criar primeiro evento</a>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

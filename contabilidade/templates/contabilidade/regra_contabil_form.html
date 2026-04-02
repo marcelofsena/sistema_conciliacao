@@ -1,0 +1,272 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ titulo }} — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}
+  <a href="{% url 'regras_contabeis' %}{% if loja %}{% endif %}">Regras Contábeis</a>
+  › {{ titulo }}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">🔀 {{ titulo }}</h1>
+    <p class="page-header__sub">
+      Cada regra define: para o evento X → debitar N contas e creditar M contas.
+    </p>
+  </div>
+</div>
+
+<div style="max-width: 640px;">
+  <form method="POST" novalidate>
+    {% csrf_token %}
+    {{ form.loja }}
+
+    <!-- Evento -->
+    <div class="card mb-3">
+      <div class="card-header">
+        <span class="card-header__title">⚡ Evento e Descrição</span>
+      </div>
+      <div class="card-body">
+
+        <div class="form-group">
+          <label class="form-label">{{ form.tipo_evento.label }} <span class="required">*</span></label>
+          {{ form.tipo_evento }}
+          {% if form.tipo_evento.errors %}
+            <div class="form-error">❌ {{ form.tipo_evento.errors|join:", " }}</div>
+          {% endif %}
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">{{ form.descricao.label }} <span class="required">*</span></label>
+          {{ form.descricao }}
+          <div class="form-hint">Descrição legível desta regra. Ex: Receita de Vendas PDV.</div>
+          {% if form.descricao.errors %}
+            <div class="form-error">❌ {{ form.descricao.errors|join:", " }}</div>
+          {% endif %}
+        </div>
+
+        <div class="form-group" style="padding-top: 8px;">
+          <label class="form-check">
+            {{ form.ativa }}
+            <label>{{ form.ativa.label }}</label>
+          </label>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Partidas (Débitos e Créditos) -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-header__title">📊 Partidas (Débitos e Créditos)</span>
+      </div>
+      <div class="card-body">
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+          Adicione múltiplos débitos e créditos. Você pode ter N débitos e M créditos para o mesmo evento.
+        </p>
+
+        {% if formset.non_form_errors %}
+          <div class="form-error">
+            {% for error in formset.non_form_errors %}
+              ❌ {{ error }}
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        <style>
+          .partidas-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 8px;
+          }
+          .partidas-table thead tr {
+            border-bottom: 2px solid var(--border-color);
+          }
+          .partidas-table tbody tr {
+            border-bottom: 1px solid var(--border-color);
+          }
+          .partidas-table th {
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            color: var(--text-muted);
+            font-size: 12px;
+          }
+          .partidas-table td {
+            padding: 12px;
+          }
+          .partidas-table select,
+          .partidas-table input {
+            width: 100%;
+            box-sizing: border-box;
+          }
+          .partidas-table .col-tipo {
+            width: 120px;
+          }
+          .partidas-table .col-ordem {
+            width: 80px;
+          }
+          .partidas-table .col-delete {
+            width: 40px;
+            text-align: center;
+          }
+          .partidas-table input[type="checkbox"] {
+            width: auto;
+          }
+          .formset-row {
+            transition: background-color 0.2s;
+          }
+          .formset-row.novo-adicionado {
+            background-color: #fffbeb;
+          }
+        </style>
+
+        <div style="overflow-x: auto;">
+          <table class="partidas-table" id="partidas-table">
+            <thead>
+              <tr>
+                <th class="col-tipo">Tipo</th>
+                <th>Conta Analítica</th>
+                <th class="col-ordem">Ordem</th>
+                <th class="col-delete">Remover</th>
+              </tr>
+            </thead>
+            <tbody id="formset-tbody">
+              {% for form in formset %}
+                <tr class="formset-row">
+                  <td class="col-tipo">
+                    {{ form.tipo }}
+                    {% if form.tipo.errors %}
+                      <div class="form-error" style="font-size: 11px; margin-top: 4px;">{{ form.tipo.errors|join:", " }}</div>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {{ form.conta }}
+                    {% if form.conta.errors %}
+                      <div class="form-error" style="font-size: 11px; margin-top: 4px;">{{ form.conta.errors|join:", " }}</div>
+                    {% endif %}
+                  </td>
+                  <td class="col-ordem">
+                    {{ form.ordem }}
+                    {% if form.ordem.errors %}
+                      <div class="form-error" style="font-size: 11px; margin-top: 4px;">{{ form.ordem.errors|join:", " }}</div>
+                    {% endif %}
+                  </td>
+                  <td class="col-delete">
+                    {{ form.DELETE }}
+                    {{ form.id }}
+                  </td>
+                </tr>
+                {% if form.non_field_errors %}
+                  <tr>
+                    <td colspan="4" style="padding: 12px;">
+                      <div class="form-error">{{ form.non_field_errors|join:", " }}</div>
+                    </td>
+                  </tr>
+                {% endif %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        {{ formset.management_form }}
+
+        <div style="margin-top: 16px; display: flex; gap: 12px; align-items: center;">
+          <button type="button" class="btn btn--outline btn--sm" onclick="adicionarPartida()">+ Adicionar Partida</button>
+          <div style="font-size: 12px; color: var(--text-muted);">
+            <strong>Nota:</strong> Deve haver pelo menos um débito e um crédito. Clique acima para adicionar quantas partidas precisar.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn--primary btn--lg">💾 {{ acao }}</button>
+      <a href="{% url 'regras_contabeis' %}{% if loja %}{% endif %}"
+         class="btn btn--outline btn--lg">Cancelar</a>
+    </div>
+  </form>
+</div>
+
+<script>
+function adicionarPartida() {
+  const tbody = document.getElementById('formset-tbody');
+  const totalFormsInput = document.getElementById('id_partidas-TOTAL_FORMS');
+
+  if (!totalFormsInput) {
+    console.error('Management form não encontrado');
+    return;
+  }
+
+  const currentTotal = parseInt(totalFormsInput.value);
+
+  // Clonar última linha como template
+  const ultimaLinha = tbody.querySelector('tr.formset-row:last-of-type');
+
+  if (!ultimaLinha) {
+    console.error('Nenhuma linha encontrada para clonar');
+    return;
+  }
+
+  const novaLinha = ultimaLinha.cloneNode(true);
+
+  // Limpar e atualizar nome/id dos campos
+  novaLinha.querySelectorAll('input, select').forEach(field => {
+    const name = field.getAttribute('name');
+    const id = field.getAttribute('id');
+
+    if (name && name.includes('-')) {
+      // Substituir índice: partidas-0-tipo -> partidas-N-tipo
+      const novoName = name.replace(/-\d+-/, `-${currentTotal}-`);
+      field.setAttribute('name', novoName);
+    }
+
+    if (id && id.includes('_')) {
+      // id_partidas_0_tipo -> id_partidas_N_tipo
+      const novoId = id.replace(/_\d+_/, `_${currentTotal}_`);
+      field.setAttribute('id', novoId);
+    }
+
+    // Limpar valores
+    if (field.type === 'checkbox') {
+      field.checked = false;
+    } else if (field.type !== 'hidden' || name.includes('DELETE')) {
+      if (name && !name.includes('DELETE') && field.type !== 'hidden') {
+        field.value = '';
+      }
+    }
+  });
+
+  // Atualizar labels
+  novaLinha.querySelectorAll('label').forEach(label => {
+    const labelFor = label.getAttribute('for');
+    if (labelFor && labelFor.includes('_')) {
+      const novoFor = labelFor.replace(/_\d+_/, `_${currentTotal}_`);
+      label.setAttribute('for', novoFor);
+    }
+  });
+
+  // Limpar mensagens de erro
+  novaLinha.querySelectorAll('.form-error').forEach(error => {
+    error.remove();
+  });
+
+  // Adicionar classe visual
+  novaLinha.classList.add('novo-adicionado');
+
+  // Remover a classe após 1 segundo
+  setTimeout(() => {
+    novaLinha.classList.remove('novo-adicionado');
+  }, 1000);
+
+  // Adicionar à tabela
+  tbody.appendChild(novaLinha);
+
+  // Atualizar management form
+  totalFormsInput.value = currentTotal + 1;
+
+  // Scroll até a nova linha
+  novaLinha.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+</script>
+{% endblock %}

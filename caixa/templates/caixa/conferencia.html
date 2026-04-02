@@ -1,0 +1,193 @@
+{% extends 'base.html' %}
+
+{% block title %}Conferência de Caixa — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}Conferência de Caixa{% endblock %}
+
+{% block topbar_actions %}
+  {% if resultados %}
+    <a href="{% url 'exportar_analitico' %}?codigo_loja={{ codigo_loja_selecionada }}&nr_abertura={{ nr_abertura_selecionada }}{% if request.GET.incluir_dinheiro %}&incluir_dinheiro=on{% endif %}"
+       class="btn btn--success btn--sm">
+      📥 Exportar Excel
+    </a>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">📊 Conferência de Caixa</h1>
+    <p class="page-header__sub">Comparativo PDV (SWFast) × Stone × iFood por turno.</p>
+  </div>
+</div>
+
+<div class="split-layout">
+
+  <!-- ===== PAINEL DE FILTROS ===== -->
+  <aside class="split-layout__sidebar">
+    <div class="filter-panel">
+      <div class="filter-panel__title">🔎 Filtros de busca</div>
+
+      <form method="GET" id="form_conferencia">
+
+        <!-- Checkbox dinheiro -->
+        <div class="form-group">
+          <label class="form-check">
+            <input type="checkbox" name="incluir_dinheiro"
+                   {% if request.GET.incluir_dinheiro %}checked{% endif %}
+                   onchange="this.form.submit()">
+            <label style="cursor:pointer;">Incluir Caixa Físico (Dinheiro)</label>
+          </label>
+        </div>
+
+        <!-- Loja -->
+        <div class="form-group">
+          <label class="form-label">Loja</label>
+          <select name="codigo_loja" class="form-control" onchange="this.form.submit()">
+            <option value="">— Selecione a loja —</option>
+            {% for loja in lojas %}
+              <option value="{{ loja }}" {% if loja == codigo_loja_selecionada %}selected{% endif %}>
+                Loja {{ loja }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- Abertura (aparece após selecionar loja) -->
+        {% if aberturas %}
+        <div class="form-group">
+          <label class="form-label">Turno / Abertura</label>
+          <select id="select_abertura" name="nr_abertura" class="form-control"
+                  onchange="this.form.submit()">
+            <option value="">— Selecione o turno —</option>
+            {% for abert in aberturas %}
+              <option value="{{ abert.numero }}"
+                      {% if abert.numero == nr_abertura_selecionada %}selected{% endif %}>
+                {{ abert.rotulo }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- Navegação anterior / próximo -->
+        <div class="form-row form-row--2" style="margin-bottom: 16px;">
+          <button type="button" onclick="mudarAbertura(1)"  class="btn btn--outline btn--sm">← Anterior</button>
+          <button type="button" onclick="mudarAbertura(-1)" class="btn btn--outline btn--sm">Próximo →</button>
+        </div>
+
+        <button type="submit" class="btn btn--primary btn--block">🔄 Recarregar</button>
+        {% endif %}
+
+      </form>
+    </div>
+  </aside>
+
+  <!-- ===== ÁREA DE RESULTADOS ===== -->
+  <section class="split-layout__main">
+
+    {% if resultados %}
+      <!-- Cabeçalho do resultado -->
+      <div class="d-flex align-center gap-2 mb-2" style="margin-bottom: 16px;">
+        <h2 style="font-size:16px; font-weight:700; color:var(--text-primary);">
+          Caixa Nº {{ nr_abertura_selecionada }}
+        </h2>
+        {% if data_caixa_selecionada %}
+          <span class="badge badge--gray">{{ data_caixa_selecionada }}</span>
+        {% endif %}
+        <span class="badge badge--blue">Loja {{ codigo_loja_selecionada }}</span>
+      </div>
+
+      <!-- Tabela de resumo -->
+      <div class="card mb-3">
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Forma de Pagamento</th>
+                <th class="td-num">Rel. Importados (Stone/iFood)</th>
+                <th class="td-num">Rel. SWFast (Caixa)</th>
+                <th class="td-num">Diferença</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for linha in resultados %}
+              <tr {% if linha.RESUMO == 'SUBTOTAL' %}class="subtotal"{% endif %}>
+                <td>{{ linha.RESUMO }}</td>
+                <td class="td-num">R$ {{ linha.Rel_importados|floatformat:2 }}</td>
+                <td class="td-num">R$ {{ linha.rel_swfast|floatformat:2 }}</td>
+                <td class="td-num">
+                  {% if linha.diferenca < 0 %}
+                    <span class="val--negative">R$ {{ linha.diferenca|floatformat:2 }}</span>
+                  {% elif linha.diferenca > 0 %}
+                    <span class="val--positive">R$ {{ linha.diferenca|floatformat:2 }}</span>
+                  {% else %}
+                    <span class="val--zero">R$ 0,00</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Pedidos cancelados -->
+      {% if cancelados %}
+      <div class="card mt-2">
+        <div class="card-header">
+          <span class="card-header__title">⚠️ Pedidos iFood com Cancelamento</span>
+          <span class="badge badge--red">{{ cancelados|length }}</span>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Nº Pedido</th>
+                <th>Data</th>
+                <th>Forma Pgto</th>
+                <th class="td-num">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for c in cancelados %}
+              <tr>
+                <td>{{ c.nr_pedido }}</td>
+                <td>{{ c.data }}</td>
+                <td>{{ c.formas_pagamento }}</td>
+                <td class="td-num val--negative">R$ {{ c.total_pedido|floatformat:2 }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
+    {% elif codigo_loja_selecionada and nr_abertura_selecionada %}
+      <div class="alert alert--warning">
+        <span class="alert__icon">⚠️</span>
+        <div class="alert__body">
+          <strong>Sem dados financeiros</strong> para este caixa. Verifique se as formas de
+          pagamento estão sincronizadas.
+        </div>
+      </div>
+
+    {% else %}
+      <div class="empty-state" style="padding-top: 80px;">
+        <div class="empty-state__icon">📊</div>
+        <div class="empty-state__title">Aguardando seleção</div>
+        <div class="empty-state__desc">
+          Selecione uma loja e o número da abertura no painel ao lado para visualizar a conciliação.
+        </div>
+      </div>
+    {% endif %}
+
+  </section>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  // mudarAbertura já está definido em app.js
+</script>
+{% endblock %}

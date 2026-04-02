@@ -1,0 +1,131 @@
+{% extends 'base.html' %}
+
+{% block title %}Templates - Plano de Contas — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}Templates - Plano de Contas{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">📋 Templates de Plano de Contas</h1>
+    <p class="page-header__sub">Modelos prontos para importar em sua loja. Você pode customizar após a importação.</p>
+  </div>
+</div>
+
+<div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 1.5rem;">
+  {% for template in templates %}
+  <div class="card">
+    <div class="card__header">
+      <h3 class="card__title">{{ template.nome }}</h3>
+      <span class="badge badge--primary">{{ template.contas.count }} contas</span>
+    </div>
+
+    <div class="card__body">
+      <p class="text-muted">{{ template.descricao }}</p>
+
+      <div style="margin-top: 1rem; font-size: 0.85rem; color: #666;">
+        <strong>Categorias incluídas:</strong>
+        <ul style="margin: 0.5rem 0; padding-left: 1.5rem;">
+          {% regroup template.contas.all by tipo_conta as contas_por_tipo %}
+          {% for tipo_group in contas_por_tipo %}
+            <li>{{ tipo_group.grouper }}: {{ tipo_group.list|length }} conta(s)</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+
+    <div class="card__footer">
+      <a href="{% url 'importar_template_plano' template.pk %}" class="btn btn--primary">
+        📥 Importar Template
+      </a>
+    </div>
+  </div>
+  {% empty %}
+  <div class="alert alert--info">
+    Nenhum template disponível no momento.
+  </div>
+  {% endfor %}
+</div>
+
+<style>
+.card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: #fff;
+  transition: box-shadow 0.2s;
+}
+
+.card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.card__header {
+  padding: 1.5rem;
+  border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.card__title {
+  margin: 0;
+  font-size: 1.125rem;
+  color: #333;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: #e3f2fd;
+  color: #1976d2;
+}
+
+.badge--primary {
+  background: #e3f2fd;
+  color: #1976d2;
+}
+
+.card__body {
+  padding: 1.5rem;
+  flex: 1;
+}
+
+.card__footer {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid #f0f0f0;
+}
+
+.text-muted {
+  color: #666;
+  margin: 0;
+}
+
+.grid {
+  display: grid;
+}
+
+.btn {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.btn--primary {
+  background: #1976d2;
+  color: white;
+}
+
+.btn--primary:hover {
+  background: #1565c0;
+}
+</style>
+{% endblock %}

@@ -1,0 +1,162 @@
+{% extends 'base.html' %}
+
+{% block title %}Lançamentos Contábeis — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}Lançamentos{% endblock %}
+
+{% block topbar_actions %}
+  {% if loja %}
+    <a href="{% url 'lancamento_criar' %}" class="btn btn--primary btn--sm">+ Novo Lançamento</a>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">📝 Lançamentos Contábeis</h1>
+    <p class="page-header__sub">Registro imutável de partidas dobradas. Ajustes via lançamento de correção.</p>
+  </div>
+</div>
+
+<!-- Filtros -->
+<div class="filter-panel mb-3">
+  <form method="GET" class="d-flex gap-2 flex-wrap align-center">
+
+    {% if loja %}
+    <select name="periodo" class="form-control" onchange="this.form.submit()" style="min-width:140px;">
+      <option value="">— Período —</option>
+      {% for p in periodos %}
+        <option value="{{ p.pk }}" {% if periodo_sel and periodo_sel.pk == p.pk %}selected{% endif %}>
+          {{ p.mes|stringformat:"02d" }}/{{ p.ano }}
+          {% if p.status == 'FECHADO' %}🔒{% elif p.status == 'REABERTO' %}🔓{% endif %}
+        </option>
+      {% endfor %}
+    </select>
+    {% endif %}
+
+    {% if periodo_sel %}
+    <select name="tipo" class="form-control" onchange="this.form.submit()" style="min-width:160px;">
+      <option value="">Todos os tipos</option>
+      {% for val, label in tipo_choices %}
+        <option value="{{ val }}" {% if tipo_filtro == val %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <input type="hidden" name="periodo" value="{{ periodo_sel.pk }}">
+    {% endif %}
+  </form>
+</div>
+
+{% if periodo_sel %}
+
+  <!-- Status do período -->
+  <div class="alert
+    {% if periodo_sel.status == 'ABERTO' %}alert--success
+    {% elif periodo_sel.status == 'REABERTO' %}alert--warning
+    {% else %}alert--info{% endif %}" style="margin-bottom:16px;">
+    <span class="alert__icon">
+      {% if periodo_sel.status == 'ABERTO' %}🟢
+      {% elif periodo_sel.status == 'REABERTO' %}🟡
+      {% else %}🔒{% endif %}
+    </span>
+    <div class="alert__body">
+      Período <strong>{{ periodo_sel.mes|stringformat:"02d" }}/{{ periodo_sel.ano }}</strong>
+      — {{ periodo_sel.get_status_display }}
+      {% if periodo_sel.status == 'FECHADO' %}
+        &nbsp;·&nbsp; Lançamentos manuais bloqueados.
+        <a href="{% url 'periodos_contabeis' %}" class="text-sm">Reabrir período →</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-header__title">
+        Lançamentos
+        <span class="badge badge--gray" style="margin-left:6px;">{{ lancamentos|length }}</span>
+      </span>
+      {% if periodo_sel.status != 'FECHADO' %}
+        <a href="{% url 'lancamento_criar' %}" class="btn btn--primary btn--sm">+ Novo</a>
+      {% endif %}
+    </div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th class="td-num">Nº</th>
+            <th>Data</th>
+            <th>Histórico</th>
+            <th>Tipo</th>
+            <th>Partidas</th>
+            <th class="td-num">Valor</th>
+            <th>Usuário</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for lanc in lancamentos %}
+          <tr>
+            <td class="td-num">
+              <span class="badge badge--gray">#{{ lanc.numero }}</span>
+            </td>
+            <td class="text-sm">{{ lanc.data_lancamento|date:"d/m/Y" }}</td>
+            <td>
+              <strong>{{ lanc.historico|truncatechars:60 }}</strong>
+              {% if lanc.evento %}
+                <div class="text-sm text-muted">
+                  Evento: <code>{{ lanc.evento.tipo_evento.codigo }}</code>
+                </div>
+              {% endif %}
+            </td>
+            <td>
+              <span class="badge
+                {% if lanc.tipo == 'NORMAL' %}badge--blue
+                {% elif lanc.tipo == 'CORRECAO' %}badge--amber
+                {% elif lanc.tipo == 'ESTORNO' %}badge--red
+                {% else %}badge--purple{% endif %}">
+                {{ lanc.get_tipo_display }}
+              </span>
+            </td>
+            <td class="text-muted text-sm">{{ lanc.partidas.count }} partida{{ lanc.partidas.count|pluralize }}</td>
+            <td class="td-num text-sm" style="font-weight: 500;">
+              R$ {{ lanc.valor_total|floatformat:2 }}
+            </td>
+            <td class="text-muted text-sm">
+              {{ lanc.usuario.get_full_name|default:lanc.usuario.username|default:"—" }}
+            </td>
+            <td>
+              <a href="{% url 'lancamento_detalhe' lanc.pk %}" class="btn btn--ghost btn--sm">🔍</a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="8">
+              <div class="empty-state" style="padding: 32px 16px;">
+                <div class="empty-state__icon">📝</div>
+                <div class="empty-state__title" style="font-size:14px;">Nenhum lançamento neste período</div>
+                {% if periodo_sel.status != 'FECHADO' %}
+                  <a href="{% url 'lancamento_criar' %}"
+                     class="btn btn--primary btn--sm">+ Criar lançamento</a>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+{% elif loja %}
+  <div class="empty-state" style="padding-top:60px;">
+    <div class="empty-state__icon">📅</div>
+    <div class="empty-state__title">Selecione um período</div>
+    <div class="empty-state__desc">Escolha o período contábil no filtro acima para ver os lançamentos.</div>
+  </div>
+{% else %}
+  <div class="empty-state" style="padding-top:80px;">
+    <div class="empty-state__icon">📝</div>
+    <div class="empty-state__title">Selecione uma loja</div>
+    <div class="empty-state__desc">Use os filtros acima para navegar pelos lançamentos contábeis.</div>
+  </div>
+{% endif %}
+
+{% endblock %}

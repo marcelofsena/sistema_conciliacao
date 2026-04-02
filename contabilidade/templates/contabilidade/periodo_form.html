@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ titulo }} — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}
+  <a href="{% url 'periodos_contabeis' %}{% if loja %}{% endif %}">Períodos Contábeis</a>
+  › {{ titulo }}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">📅 {{ titulo }}</h1>
+    <p class="page-header__sub">
+      Períodos abertos permitem lançamentos. Após fechamento, apenas via reabertura justificada.
+      {% if loja %}<strong>Loja: {{ loja.descricao }}</strong>{% endif %}
+    </p>
+  </div>
+</div>
+
+<div style="max-width: 400px;">
+  <form method="POST" novalidate>
+    {% csrf_token %}
+    {{ form.loja }}
+
+    <div class="card mb-3">
+      <div class="card-header">
+        <span class="card-header__title">📋 Dados do Período</span>
+      </div>
+      <div class="card-body">
+
+        <div class="form-row form-row--2">
+          <div class="form-group">
+            <label class="form-label">{{ form.ano.label }} <span class="required">*</span></label>
+            {{ form.ano }}
+            {% if form.ano.errors %}
+              <div class="form-error">❌ {{ form.ano.errors|join:", " }}</div>
+            {% endif %}
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ form.mes.label }} <span class="required">*</span></label>
+            {{ form.mes }}
+            <div class="form-hint">1 = Janeiro … 12 = Dezembro</div>
+            {% if form.mes.errors %}
+              <div class="form-error">❌ {{ form.mes.errors|join:", " }}</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="alert alert--info" style="margin-top:4px;">
+          O período será criado com status <strong>Aberto</strong>.
+        </div>
+
+      </div>
+    </div>
+
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn--primary btn--lg">💾 {{ acao }}</button>
+      <a href="{% url 'periodos_contabeis' %}{% if loja %}{% endif %}"
+         class="btn btn--outline btn--lg">Cancelar</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

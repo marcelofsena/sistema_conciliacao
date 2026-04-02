@@ -1,0 +1,157 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ titulo }} — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}
+  <a href="{% url 'plano_contas' %}{% if loja %}{% if sintetica %}?sintetica={{ sintetica.pk }}{% endif %}{% endif %}">
+    Plano de Contas
+  </a> › {{ titulo }}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">📋 {{ titulo }}</h1>
+    <p class="page-header__sub">
+      Contas analíticas são as folhas da árvore — onde os lançamentos são realizados.
+      {% if sintetica %}
+        Grupo: <strong>{{ sintetica.codigo_classificacao }} — {{ sintetica.nome }}</strong>
+      {% endif %}
+    </p>
+  </div>
+</div>
+
+<div style="max-width: 620px;">
+  <form method="POST" novalidate>
+    {% csrf_token %}
+    {{ form.loja }}
+
+    <!-- Identificação -->
+    <div class="card mb-3">
+      <div class="card-header">
+        <span class="card-header__title">🔖 Identificação</span>
+      </div>
+      <div class="card-body">
+
+        <div class="form-row form-row--2">
+          {% if form.codigo_reduzido.widget.input_type != 'hidden' %}
+          <div class="form-group">
+            <label class="form-label">{{ form.codigo_reduzido.label }} <span class="required">*</span></label>
+            {{ form.codigo_reduzido }}
+            <div class="form-hint">{{ form.codigo_reduzido.help_text }}</div>
+            {% if form.codigo_reduzido.errors %}
+              <div class="form-error">❌ {{ form.codigo_reduzido.errors|join:", " }}</div>
+            {% endif %}
+          </div>
+          {% else %}
+          {{ form.codigo_reduzido }}
+          {% endif %}
+          <div class="form-group">
+            <label class="form-label">
+              {{ form.codigo_classificacao.label }} <span class="required">*</span>
+              {% if proximo_codigo_analitico %}<span class="form-hint-auto">🤖 Automático</span>{% endif %}
+            </label>
+            {{ form.codigo_classificacao }}
+            {% if proximo_codigo_analitico %}
+              <div class="form-hint" style="background: #e8f5e9; padding: 8px; border-radius: 4px; margin-top: 6px; color: #2e7d32;">
+                ✓ <strong>Preenchido automaticamente:</strong> <code style="background: #fff; padding: 2px 4px; border-radius: 2px;">{{ proximo_codigo_analitico }}</code>
+                <br><small style="color: #1b5e20;">Código reduzido: <strong>{{ proximo_codigo_analitico|slice:"-4:" }}</strong> (extraído automaticamente)</small>
+              </div>
+            {% else %}
+              <div class="form-hint">
+                Formato: X.X.X.XX.YYYY
+                <br><small>Ex: 1.1.1.02.0001 (últimos 4 dígitos = código reduzido)</small>
+              </div>
+            {% endif %}
+            {% if form.codigo_classificacao.errors %}
+              <div class="form-error">❌ {{ form.codigo_classificacao.errors|join:", " }}</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">{{ form.nome.label }} <span class="required">*</span></label>
+          {{ form.nome }}
+          {% if form.nome.errors %}
+            <div class="form-error">❌ {{ form.nome.errors|join:", " }}</div>
+          {% endif %}
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">{{ form.conta_sintetica.label }} <span class="required">*</span></label>
+          {{ form.conta_sintetica }}
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Configurações contábeis -->
+    <div class="card mb-3">
+      <div class="card-header">
+        <span class="card-header__title">⚙️ Configurações contábeis</span>
+      </div>
+      <div class="card-body">
+
+        <div class="form-row form-row--2">
+          <div class="form-group">
+            <label class="form-label">{{ form.natureza_saldo.label }}</label>
+            {{ form.natureza_saldo }}
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ form.data_bloqueio.label }}</label>
+            {{ form.data_bloqueio }}
+            <div class="form-hint">Bloqueia lançamentos antes desta data.</div>
+          </div>
+        </div>
+
+        <div class="form-row form-row--2">
+          <div class="form-group" style="padding-top: 6px;">
+            <label class="form-check">
+              {{ form.aceita_lancamento }}
+              <label>{{ form.aceita_lancamento.label }}</label>
+            </label>
+          </div>
+          <div class="form-group" style="padding-top: 6px;">
+            <label class="form-check">
+              {{ form.centro_custo }}
+              <label>{{ form.centro_custo.label }}</label>
+            </label>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn--primary btn--lg">💾 {{ acao }}</button>
+      <a href="{% url 'plano_contas' %}{% if loja %}{% if sintetica %}?sintetica={{ sintetica.pk }}{% endif %}{% endif %}"
+         class="btn btn--outline btn--lg">Cancelar</a>
+    </div>
+  </form>
+</div>
+
+{% block extra_css %}
+<style>
+/* Label para campos automáticos */
+.form-hint-auto {
+  display: inline-block;
+  background: #e8f5e9;
+  color: #2e7d32;
+  padding: 0.25rem 0.5rem;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-left: 0.5rem;
+}
+
+input[readonly],
+input:disabled,
+select[disabled] {
+  background-color: #f5f5f5;
+  color: #666;
+  cursor: not-allowed;
+  opacity: 0.8;
+  border-color: #ddd !important;
+}
+</style>
+{% endblock %}
+{% endblock %}

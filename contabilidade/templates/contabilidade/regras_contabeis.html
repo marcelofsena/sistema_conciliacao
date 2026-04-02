@@ -1,0 +1,122 @@
+{% extends 'base.html' %}
+
+{% block title %}Regras Contábeis — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}Regras Contábeis{% endblock %}
+
+{% block topbar_actions %}
+  {% if loja %}
+    <a href="{% url 'regra_contabil_criar' %}" class="btn btn--primary btn--sm">+ Nova Regra</a>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">🔀 Regras Contábeis</h1>
+    <p class="page-header__sub">Mapeamento De/Para — qual evento gera quais débitos e créditos no plano de contas.</p>
+  </div>
+</div>
+
+{% if loja %}
+
+{% regroup regras by tipo_evento as regras_por_evento %}
+
+{% if regras_por_evento %}
+  {% for grupo in regras_por_evento %}
+  <div class="card mb-3">
+    <div class="card-header">
+      <span class="card-header__title">
+        <code style="background:var(--surface-alt); padding:2px 8px; border-radius:4px; font-size:12px; letter-spacing:.5px;">
+          {{ grupo.grouper.codigo }}
+        </code>
+        <span style="margin-left:8px; font-weight:400; color:var(--text-muted);">{{ grupo.grouper.descricao }}</span>
+      </span>
+      <span class="badge badge--gray">{{ grupo.list|length }} regra{{ grupo.list|length|pluralize }}</span>
+    </div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Descrição</th>
+            <th>Débitos</th>
+            <th>Créditos</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for regra in grupo.list %}
+          <tr {% if not regra.ativa %}style="opacity:.55;"{% endif %}>
+            <td><strong>{{ regra.descricao }}</strong></td>
+            <td>
+              {% for partida in regra.get_debitos %}
+              <div style="margin-bottom: 4px;">
+                <span class="badge badge--blue" title="{{ partida.conta.nome }}">
+                  D {{ partida.conta.codigo_reduzido }}
+                </span>
+                <div class="text-sm text-muted">{{ partida.conta.nome|truncatewords:5 }}</div>
+              </div>
+              {% empty %}
+              <span class="badge" style="background:#f0f0f0; color:#999;">Nenhum débito</span>
+              {% endfor %}
+            </td>
+            <td>
+              {% for partida in regra.get_creditos %}
+              <div style="margin-bottom: 4px;">
+                <span class="badge badge--amber" title="{{ partida.conta.nome }}">
+                  C {{ partida.conta.codigo_reduzido }}
+                </span>
+                <div class="text-sm text-muted">{{ partida.conta.nome|truncatewords:5 }}</div>
+              </div>
+              {% empty %}
+              <span class="badge" style="background:#f0f0f0; color:#999;">Nenhum crédito</span>
+              {% endfor %}
+            </td>
+            <td>
+              {% if regra.ativa %}
+                <span class="badge badge--green">Ativa</span>
+              {% else %}
+                <span class="badge badge--red">Inativa</span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="d-flex gap-1">
+                <a href="{% url 'regra_contabil_editar' regra.pk %}" class="btn btn--outline btn--sm">✏️</a>
+                <form method="POST" action="{% url 'regra_contabil_toggle' regra.pk %}" style="display:inline;">
+                  {% csrf_token %}
+                  <button type="submit"
+                          class="btn btn--sm {% if regra.ativa %}btn--ghost{% else %}btn--success{% endif %}"
+                          data-confirm="{% if regra.ativa %}Desativar esta regra?{% else %}Ativar esta regra?{% endif %}">
+                    {% if regra.ativa %}Off{% else %}On{% endif %}
+                  </button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endfor %}
+
+{% else %}
+  <div class="empty-state" style="padding-top: 60px;">
+    <div class="empty-state__icon">🔀</div>
+    <div class="empty-state__title">Nenhuma regra cadastrada para esta loja</div>
+    <div class="empty-state__desc">
+      Regras definem como cada evento operacional gera partidas débito/crédito.
+    </div>
+    <a href="{% url 'regra_contabil_criar' %}" class="btn btn--primary">+ Criar primeira regra</a>
+  </div>
+{% endif %}
+
+{% else %}
+<div class="empty-state" style="padding-top: 80px;">
+  <div class="empty-state__icon">🔀</div>
+  <div class="empty-state__title">Selecione uma loja</div>
+  <div class="empty-state__desc">Use o seletor acima para visualizar as regras contábeis da loja.</div>
+</div>
+{% endif %}
+
+{% endblock %}

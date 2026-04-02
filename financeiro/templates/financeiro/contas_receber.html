@@ -1,0 +1,184 @@
+{% extends 'base.html' %}
+
+{% block title %}Contas a Receber — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}Contas a Receber{% endblock %}
+
+{% block topbar_actions %}
+  {% if loja %}
+    <a href="{% url 'conta_receber_criar' %}" class="btn btn--primary btn--sm">+ Nova Conta</a>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">💰 Contas a Receber</h1>
+    <p class="page-header__sub">Títulos alimentados automaticamente por vendas e conciliação, com inclusão manual para vales e empréstimos.</p>
+  </div>
+  <div class="page-header__actions">
+  </div>
+</div>
+
+{% if loja %}
+
+<!-- Métricas resumo -->
+<div class="metric-grid mb-3" style="grid-template-columns: repeat(3, 1fr);">
+  <div class="metric-card">
+    <div class="metric-card__label">Em Aberto</div>
+    <div class="metric-card__value" style="color:var(--amber, #f59e0b);">
+      R$ {{ totais.total_aberto|floatformat:2 }}
+    </div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-card__label">Recebido (todos)</div>
+    <div class="metric-card__value" style="color:var(--green, #16a34a);">
+      R$ {{ totais.total_recebido|floatformat:2 }}
+    </div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-card__label">Títulos Vencidos</div>
+    <div class="metric-card__value" {% if totais.count_vencido > 0 %}style="color:var(--red, #dc2626);"{% endif %}>
+      {{ totais.count_vencido }}
+    </div>
+  </div>
+</div>
+
+<!-- Filtros -->
+<div class="filter-panel mb-3">
+  <form method="GET" class="d-flex gap-2 flex-wrap align-center">
+    <select name="status" class="form-control" onchange="this.form.submit()" style="min-width:160px;">
+      <option value="">Todos os status</option>
+      {% for val, label in status_choices %}
+        <option value="{{ val }}" {% if status_filtro == val %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <select name="origem" class="form-control" onchange="this.form.submit()" style="min-width:200px;">
+      <option value="">Todas as origens</option>
+      {% for val, label in origem_choices %}
+        <option value="{{ val }}" {% if origem_filtro == val %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    {% if status_filtro or origem_filtro %}
+      <a href="" class="btn btn--ghost btn--sm">✕ Limpar</a>
+    {% endif %}
+  </form>
+</div>
+
+<!-- Tabela -->
+<div class="card">
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Descrição</th>
+          <th>Tipo</th>
+          <th>Origem</th>
+          <th>Emissão</th>
+          <th>Vencimento</th>
+          <th class="td-num">Valor Original</th>
+          <th class="td-num">Saldo</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in titulos %}
+        <tr {% if t.status == 'ABERTO' or t.status == 'PARCIAL' and t.data_vencimento < hoje %}class="row--vencido"{% endif %}>
+          <td>
+            <strong>{{ t.descricao|truncatechars:55 }}</strong>
+            {% if t.forma_pagamento %}
+              <div class="text-sm text-muted">{{ t.forma_pagamento }}</div>
+            {% endif %}
+          </td>
+          <td class="text-sm">
+            {% if t.tipo_manual %}
+              <span class="badge badge--purple">{{ t.get_tipo_manual_display }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            <span class="badge
+              {% if t.origem == 'VENDA' %}badge--blue
+              {% elif t.origem == 'CONCILIACAO' %}badge--green
+              {% else %}badge--amber{% endif %}">
+              {{ t.get_origem_display }}
+            </span>
+          </td>
+          <td class="text-sm text-muted">{{ t.data_emissao|date:"d/m/Y" }}</td>
+          <td class="text-sm {% if t.status == 'ABERTO' or t.status == 'PARCIAL' and t.data_vencimento < hoje %}text-danger{% endif %}">
+            {{ t.data_vencimento|date:"d/m/Y" }}
+            {% if t.status == 'ABERTO' or t.status == 'PARCIAL' and t.data_vencimento < hoje %}
+              <span class="badge badge--red" style="font-size:10px;">Vencido</span>
+            {% endif %}
+          </td>
+          <td class="td-num text-sm">R$ {{ t.valor_original|floatformat:2 }}</td>
+          <td class="td-num" style="font-weight:600;">
+            R$ {{ t.saldo|floatformat:2 }}
+          </td>
+          <td>
+            <span class="badge
+              {% if t.status == 'ABERTO' %}badge--amber
+              {% elif t.status == 'PARCIAL' %}badge--blue
+              {% elif t.status == 'RECEBIDO' %}badge--green
+              {% else %}badge--gray{% endif %}">
+              {{ t.get_status_display }}
+            </span>
+          </td>
+          <td>
+            <div class="d-flex gap-1">
+              {% if t.status == 'ABERTO' or t.status == 'PARCIAL' %}
+                <a href="{% url 'registrar_recebimento' t.pk %}"
+                   class="btn btn--success btn--sm">✓ Receber</a>
+                <a href="{% url 'conta_receber_editar' t.pk %}"
+                   class="btn btn--ghost btn--sm">✏️</a>
+                <form method="POST" action="{% url 'cancelar_conta_receber' t.pk %}" style="display:inline;">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn--ghost btn--sm"
+                          data-confirm="Cancelar &quot;{{ t.descricao }}&quot;?">✕</button>
+                </form>
+              {% elif t.status == 'RECEBIDO' %}
+                <span class="text-sm text-muted">Quitado {{ t.data_recebimento|date:"d/m/Y" }}</span>
+              {% else %}
+                <span class="text-sm text-muted">Cancelado</span>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="9">
+            <div class="empty-state">
+              <div class="empty-state__icon">💰</div>
+              <div class="empty-state__title">Nenhum título encontrado</div>
+              <div class="empty-state__desc">
+                {% if status_filtro or origem_filtro %}
+                  Tente remover os filtros.
+                {% else %}
+                  Contas a receber são criadas automaticamente por vendas e conciliação.
+                  Inclusões manuais (vales, empréstimos) podem ser adicionadas aqui.
+                {% endif %}
+              </div>
+              <a href="{% url 'conta_receber_criar' %}" class="btn btn--primary btn--sm">+ Inclusão Manual</a>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% else %}
+<div class="empty-state" style="padding-top:80px;">
+  <div class="empty-state__icon">💰</div>
+  <div class="empty-state__title">Selecione uma loja</div>
+  <div class="empty-state__desc">Use o seletor acima para visualizar as contas a receber.</div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.row--vencido { background: #fff7ed; }
+.text-danger  { color: var(--red, #dc2626); font-weight: 600; }
+</style>
+{% endblock %}

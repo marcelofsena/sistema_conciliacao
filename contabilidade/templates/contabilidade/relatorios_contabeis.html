@@ -1,0 +1,209 @@
+{% extends 'base.html' %}
+
+{% block title %}Relatórios Contábeis — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}Relatórios (DRE/DFC){% endblock %}
+
+{% block topbar_actions %}
+  {% if linhas %}
+    <button onclick="window.print()" class="btn btn--outline btn--sm">🖨️ Imprimir</button>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">📈 Relatórios Contábeis</h1>
+    <p class="page-header__sub">DRE e DFC gerados a partir do plano de contas e dos lançamentos contabilizados.</p>
+  </div>
+</div>
+
+<!-- ── Filtros ──────────────────────────────────────────── -->
+<div class="filter-panel mb-3">
+  <form method="GET" class="d-flex gap-2 flex-wrap align-center" id="form-relatorio">
+
+
+    {% if loja %}
+    <select name="modelo" class="form-control" style="min-width:220px;">
+      <option value="">— Selecione o modelo —</option>
+      {% for m in modelos %}
+        <option value="{{ m.pk }}" {% if modelo_sel and modelo_sel.pk == m.pk %}selected{% endif %}>
+          {{ m.descricao }} ({{ m.tipo }})
+        </option>
+      {% endfor %}
+    </select>
+
+    <select name="ano" class="form-control" style="min-width:90px;">
+      <option value="">Ano</option>
+      {% for a in anos_disponiveis %}
+        <option value="{{ a }}" {% if ano == a|stringformat:"s" %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+
+    <select name="mes_ini" class="form-control" style="min-width:80px;">
+      <option value="">De</option>
+      {% for num, label in meses %}
+        <option value="{{ num }}" {% if mes_ini == num|stringformat:"s" %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+
+    <select name="mes_fim" class="form-control" style="min-width:80px;">
+      <option value="">Até</option>
+      {% for num, label in meses %}
+        <option value="{{ num }}" {% if mes_fim == num|stringformat:"s" %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+
+    <button type="submit" class="btn btn--primary btn--sm">▶ Gerar</button>
+    {% endif %}
+
+  </form>
+</div>
+
+{% if erro %}
+  <div class="alert alert--warning">
+    <span class="alert__icon">⚠️</span>
+    <div class="alert__body">{{ erro }}</div>
+  </div>
+
+{% elif modelo_sel and linhas %}
+
+  <!-- ── Cabeçalho do relatório ───────────────────────── -->
+  <div class="report-header no-print-hide">
+    <div style="font-size:11px; text-transform:uppercase; letter-spacing:.8px; color:var(--text-muted); margin-bottom:4px;">
+      {{ loja.descricao }}
+    </div>
+    <div style="font-size:20px; font-weight:700;">{{ modelo_sel.descricao }}</div>
+    <div style="font-size:13px; color:var(--text-muted); margin-top:4px;">
+      {{ modelo_sel.get_tipo_display }}
+      {% if ano %} · {{ ano }}{% endif %}
+      {% if mes_ini and mes_fim %}
+        {% for num, label in meses %}{% if num|stringformat:"s" == mes_ini %} · {{ label }}{% endif %}{% endfor %}
+        –
+        {% for num, label in meses %}{% if num|stringformat:"s" == mes_fim %}{{ label }}{% endif %}{% endfor %}
+      {% elif mes_ini %}
+        {% for num, label in meses %}{% if num|stringformat:"s" == mes_ini %} · {{ label }}{% endif %}{% endfor %}
+      {% endif %}
+      · {{ periodos_selecionados|length }} período{{ periodos_selecionados|length|pluralize }} consolidado{{ periodos_selecionados|length|pluralize }}
+    </div>
+  </div>
+
+  <!-- ── Corpo do relatório ───────────────────────────── -->
+  <div class="card report-card">
+    <div class="table-wrapper">
+      <table class="report-table">
+        <thead>
+          <tr>
+            <th style="width:100px;">Posição</th>
+            <th>Descrição</th>
+            <th class="td-num" style="width:160px;">Valor (R$)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for linha in linhas %}
+          <tr class="
+            report-row
+            report-row--nivel-{{ linha.nivel }}
+            {% if linha.is_resultado %}report-row--resultado{% endif %}
+            {% if linha.is_sintetica %}report-row--sintetica{% endif %}
+          ">
+            <td class="report-posicao">{{ linha.posicao }}</td>
+            <td class="report-desc" style="padding-left: calc(8px + {{ linha.nivel|add:-1 }}rem);">
+              {{ linha.descricao }}
+            </td>
+            <td class="td-num report-valor
+              {% if linha.saldo < 0 %}report-valor--neg{% elif linha.is_resultado %}report-valor--resultado{% endif %}
+            ">
+              {% if linha.is_resultado or linha.is_sintetica %}
+                <strong>{{ linha.saldo|floatformat:2 }}</strong>
+              {% else %}
+                {{ linha.saldo|floatformat:2 }}
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr class="report-row--total">
+            <td colspan="2" style="padding:12px 16px; font-weight:700;">RESULTADO DO PERÍODO</td>
+            <td class="td-num report-total-valor {% if total_resultado >= 0 %}report-total-positivo{% else %}report-total-negativo{% endif %}">
+              R$ {{ total_resultado|floatformat:2 }}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+
+{% elif modelo_sel %}
+  <div class="alert alert--info">
+    <span class="alert__icon">ℹ️</span>
+    <div class="alert__body">
+      O modelo <strong>{{ modelo_sel.descricao }}</strong> não possui estruturas cadastradas.
+      <a href="/admin/contabilidade/estruturarelatorio/add/" target="_blank">Adicionar estruturas via Admin ↗</a>
+    </div>
+  </div>
+
+{% elif loja %}
+  <div class="empty-state" style="padding-top:60px;">
+    <div class="empty-state__icon">📈</div>
+    <div class="empty-state__title">Selecione um modelo e período</div>
+    <div class="empty-state__desc">
+      {% if not modelos %}
+        Nenhum modelo de relatório cadastrado para esta loja.
+        <br><a href="/admin/contabilidade/modelorelatorio/add/" target="_blank">Criar modelo via Admin ↗</a>
+      {% else %}
+        Escolha o modelo, ano e período, então clique em <strong>Gerar</strong>.
+      {% endif %}
+    </div>
+  </div>
+
+{% else %}
+  <div class="empty-state" style="padding-top:80px;">
+    <div class="empty-state__icon">📈</div>
+    <div class="empty-state__title">Selecione uma loja</div>
+    <div class="empty-state__desc">Use o seletor acima para gerar os demonstrativos contábeis.</div>
+  </div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── Layout do relatório ── */
+.report-header {
+  padding: 16px 0 20px;
+}
+.report-card {
+  margin-bottom: 24px;
+}
+.report-table td, .report-table th {
+  padding: 7px 14px;
+  font-size: 13px;
+}
+
+/* Níveis de indentação */
+.report-row--nivel-1 .report-desc { font-weight: 700; font-size: 14px; }
+.report-row--nivel-2 .report-desc { font-weight: 600; }
+.report-row--nivel-3 .report-desc { color: var(--text-secondary, #4b5563); }
+
+/* Linhas especiais */
+.report-row--sintetica  { background: var(--surface-alt); }
+.report-row--resultado  { background: #f0f9ff; border-top: 2px solid var(--blue); }
+.report-row--total      { background: var(--surface-alt); border-top: 2px solid var(--border); }
+
+.report-posicao { font-size: 11px; color: var(--text-muted); font-family: monospace; }
+.report-valor--neg      { color: var(--red, #dc2626); }
+.report-valor--resultado  { color: var(--blue); font-weight: 700; }
+.report-total-valor    { padding: 12px 16px; font-weight: 700; font-size: 16px; }
+.report-total-positivo { color: var(--green, #16a34a); }
+.report-total-negativo { color: var(--red,   #dc2626); }
+
+/* Impressão */
+@media print {
+  .sidebar, .topbar, .filter-panel, .topbar__actions { display: none !important; }
+  .main { margin-left: 0 !important; }
+  .content { padding: 0 !important; }
+  .report-card { box-shadow: none; border: 1px solid #ccc; }
+}
+</style>
+{% endblock %}

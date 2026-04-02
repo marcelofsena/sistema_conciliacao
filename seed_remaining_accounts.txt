@@ -1,0 +1,18 @@
+INSTRUÇÕES PARA INSERIR O PLANO DE CONTAS COMPLETO
+
+Já foram inseridas: 26 contas de ATIVO
+
+Faltam inserir:
+- 28 contas de PASSIVO (inclui Patrimônio Líquido)
+- 14 contas de RECEITA
+- 12 contas de CUSTO
+- 28 contas de DESPESA OPERACIONAL
+= 82 contas restantes (total 108)
+
+Para inserir as contas restantes, execute no admin Django:
+http://localhost:8000/admin/contabilidade/contasintetica/
+
+Ou use o arquivo seed_plano_contas.py (após corrigir a sintaxe dos floats)
+
+Se desejar, posso inserir as 82 contas restantes automaticamente.
+Confirme digitando: "sim, insira o restante do plano de contas"

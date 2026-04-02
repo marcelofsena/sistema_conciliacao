@@ -1,0 +1,177 @@
+{% extends 'base.html' %}
+
+{% block title %}Períodos Contábeis — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}Períodos Contábeis{% endblock %}
+
+{% block topbar_actions %}
+  {% if loja %}
+    <a href="{% url 'periodo_criar' %}" class="btn btn--primary btn--sm">+ Abrir Período</a>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">📅 Períodos Contábeis</h1>
+    <p class="page-header__sub">Controle de abertura e fechamento mensal. Períodos fechados bloqueiam novos lançamentos.</p>
+  </div>
+  <div class="page-header__actions">
+  </div>
+</div>
+
+{% if loja %}
+
+{% if periodos %}
+<div class="card">
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Período</th>
+          <th>Status</th>
+          <th>Fechado em</th>
+          <th>Fechado por</th>
+          <th>Motivo Reabertura</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in periodos %}
+        <tr>
+          <td>
+            <strong style="font-size:15px;">{{ p.mes|stringformat:"02d" }}/{{ p.ano }}</strong>
+          </td>
+          <td>
+            {% if p.status == 'ABERTO' %}
+              <span class="badge badge--green">Aberto</span>
+            {% elif p.status == 'FECHADO' %}
+              <span class="badge badge--red">Fechado</span>
+            {% else %}
+              <span class="badge badge--amber">Reaberto</span>
+            {% endif %}
+          </td>
+          <td class="text-muted text-sm">
+            {% if p.data_fechamento %}{{ p.data_fechamento|date:"d/m/Y H:i" }}{% else %}—{% endif %}
+          </td>
+          <td class="text-muted text-sm">
+            {% if p.fechado_por %}{{ p.fechado_por.get_full_name|default:p.fechado_por.username }}{% else %}—{% endif %}
+          </td>
+          <td class="text-muted text-sm">
+            {% if p.motivo_reabertura %}
+              <span title="{{ p.motivo_reabertura }}">{{ p.motivo_reabertura|truncatechars:40 }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            <div class="d-flex gap-1">
+              {% if p.status == 'ABERTO' or p.status == 'REABERTO' %}
+                <form method="POST" action="{% url 'periodo_fechar' p.pk %}">
+                  {% csrf_token %}
+                  <button type="submit"
+                          class="btn btn--sm btn--outline"
+                          data-confirm="Fechar {{ p.mes|stringformat:'02d' }}/{{ p.ano }}? Novos lançamentos serão bloqueados.">
+                    🔒 Fechar
+                  </button>
+                </form>
+              {% elif p.status == 'FECHADO' %}
+                <button type="button"
+                        class="btn btn--sm btn--ghost"
+                        onclick="abrirModalReabertura({{ p.pk }}, '{{ p.mes|stringformat:'02d' }}/{{ p.ano }}')">
+                  🔓 Reabrir
+                </button>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% else %}
+<div class="empty-state" style="padding-top: 60px;">
+  <div class="empty-state__icon">📅</div>
+  <div class="empty-state__title">Nenhum período cadastrado</div>
+  <div class="empty-state__desc">Crie o primeiro período contábil para esta loja.</div>
+  <a href="{% url 'periodo_criar' %}" class="btn btn--primary">+ Abrir Período</a>
+</div>
+{% endif %}
+
+{% else %}
+<div class="empty-state" style="padding-top: 80px;">
+  <div class="empty-state__icon">📅</div>
+  <div class="empty-state__title">Selecione uma loja</div>
+  <div class="empty-state__desc">Use o seletor acima para visualizar os períodos contábeis.</div>
+</div>
+{% endif %}
+
+<!-- Modal Reabertura -->
+<div id="modal-reabertura" class="modal-overlay" style="display:none;" onclick="if(event.target===this)fecharModal()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>🔓 Reabrir Período <span id="modal-periodo-label"></span></h3>
+    </div>
+    <form method="POST" id="form-reabrir">
+      {% csrf_token %}
+      <div class="modal-body">
+        <div class="alert alert--warning">
+          <strong>Atenção:</strong> A reabertura permite novos lançamentos e estornos neste período.
+          Registre o motivo obrigatoriamente.
+        </div>
+        <div class="form-group" style="margin-top:12px;">
+          <label class="form-label">Motivo da Reabertura <span class="required">*</span></label>
+          <textarea name="motivo" class="form-control" rows="3" required
+                    placeholder="Descreva o motivo da reabertura..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn--outline" onclick="fecharModal()">Cancelar</button>
+        <button type="submit" class="btn btn--primary">🔓 Confirmar Reabertura</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.45);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000;
+}
+.modal-box {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: 100%; max-width: 480px;
+  overflow: hidden;
+}
+.modal-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-header h3 { margin: 0; font-size: 16px; }
+.modal-body  { padding: 20px; }
+.modal-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  display: flex; gap: 8px; justify-content: flex-end;
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function abrirModalReabertura(pk, label) {
+  document.getElementById('modal-periodo-label').textContent = label;
+  document.getElementById('form-reabrir').action = '/contabilidade/periodos/' + pk + '/reabrir/';
+  document.getElementById('modal-reabertura').style.display = 'flex';
+}
+function fecharModal() {
+  document.getElementById('modal-reabertura').style.display = 'none';
+}
+</script>
+{% endblock %}

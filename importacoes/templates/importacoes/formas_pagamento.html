@@ -1,60 +1,242 @@
-{% extends 'importacoes/base.html' %}
+{% extends 'base.html' %}
+
+{% block title %}Formas de Pagamento — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}Formas de Pagamento{% endblock %}
 
 {% block content %}
-    <h2 style="color: #2c3e50; border-bottom: 2px solid #ecf0f1; padding-bottom: 10px;">💳 Sincronizar Formas de Pagamento</h2>
-    <p>Esta ferramenta varre os dados importados do SWFast e extrai as novas formas de pagamento utilizadas.</p>
-
-    {% if messages %}
-        <ul style="list-style: none; padding: 0;">
-            {% for message in messages %}
-                <li style="padding: 12px; margin-bottom: 15px; border-radius: 4px; font-weight: bold;
-                    {% if message.tags == 'success' %}background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb;
-                    {% elif message.tags == 'error' %}background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb;
-                    {% else %}background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb;{% endif %}">
-                    {{ message }}
-                </li>
-            {% endfor %}
-        </ul>
-    {% endif %}
-
-    <form method="POST" style="margin-bottom: 30px; margin-top: 20px;">
-        {% csrf_token %}
-        <button type="submit" class="btn-primary">🔍 Verificar e Adicionar Novas Formas no Banco</button>
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">💳 Sincronizar Formas de Pagamento</h1>
+    <p class="page-header__sub">
+      Varre os dados importados do SWFast e extrai novas formas de pagamento.
+      Edite a especificação (Grupo interno) diretamente na tabela abaixo.
+    </p>
+  </div>
+  <div class="page-header__actions">
+    <form method="POST">
+      {% csrf_token %}
+      <button type="submit" class="btn btn--primary">
+        🔍 Verificar e sincronizar
+      </button>
     </form>
+  </div>
+</div>
 
-    <h3 style="color: #2c3e50;">Registros Atuais no Banco</h3>
-    <p style="font-size: 14px; color: #7f8c8d;"><i>*Para editar a coluna "Especificação (Resumo)", acesse o menu <a href="/admin/importacoes/formapagamento/" target="_blank">Administração</a>.</i></p>
-
-    <table>
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Loja</th>
-                <th>Aplicativo</th>
-                <th>Forma de Pagamento (SWFast)</th>
-                <th>Especificação (Resumo/Grupo)</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for forma in formas %}
-            <tr>
-                <td>{{ forma.id }}</td>
-                <td>{{ forma.codigo_loja }}</td>
-                <td>{{ forma.aplicativo }}</td>
-                <td><strong>{{ forma.forma_pagamento }}</strong></td>
-                <td>
-                    {% if forma.especific_form_pgto %}
-                        <span style="color: #27ae60; font-weight: bold;">{{ forma.especific_form_pgto }}</span>
-                    {% else %}
-                        <span style="color: #e74c3c; font-weight: bold;">[Vazio - Requer Configuração no Admin]</span>
-                    {% endif %}
-                </td>
-            </tr>
-            {% empty %}
-            <tr>
-                <td colspan="5" style="text-align: center; padding: 20px;">Nenhuma forma de pagamento cadastrada. Importe o SWFast e clique no botão acima!</td>
-            </tr>
-            {% endfor %}
-        </tbody>
+<!-- Tabela -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-header__title">📋 Registros atuais no banco</span>
+  </div>
+  <div class="table-wrapper">
+    <table id="tabela-formas">
+      <thead>
+        <tr>
+          <th style="width:60px;">#</th>
+          <th style="width:100px;">Loja</th>
+          <th>Aplicativo</th>
+          <th>Forma de Pagamento (SWFast)</th>
+          <th style="width:280px;">Especificação (Grupo interno)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for forma in formas %}
+        <tr class="forma-row" data-forma-id="{{ forma.id }}">
+          <td class="text-muted text-sm">{{ forma.id }}</td>
+          <td><span class="badge badge--gray">{{ forma.codigo_loja }}</span></td>
+          <td>{{ forma.aplicativo|default:"—" }}</td>
+          <td><strong>{{ forma.forma_pagamento }}</strong></td>
+          <td>
+            <div class="especificacao-cell" data-forma-id="{{ forma.id }}">
+              <div class="especificacao-view">
+                {% if forma.especific_form_pgto %}
+                  <span class="badge badge--green" id="esp-badge-{{ forma.id }}">{{ forma.especific_form_pgto }}</span>
+                {% else %}
+                  <span class="badge badge--red" id="esp-badge-{{ forma.id }}">⚠️ Sem configuração</span>
+                {% endif %}
+                <button type="button" class="btn btn--ghost btn--sm" onclick="editarEspecificacao({{ forma.id }})">
+                  ✏️ Editar
+                </button>
+              </div>
+              <div class="especificacao-edit hidden" id="edit-{{ forma.id }}">
+                <div class="d-flex gap-1 align-center">
+                  <input type="text" class="form-control especificacao-input" id="inp-{{ forma.id }}"
+                         value="{{ forma.especific_form_pgto }}"
+                         placeholder="Ex: Dinheiro, Cartão débito, PIX…">
+                  <button type="button" class="btn btn--success btn--sm" onclick="salvarEspecificacao({{ forma.id }})">
+                    ✓ Salvar
+                  </button>
+                  <button type="button" class="btn btn--ghost btn--sm" onclick="cancelarEdicao({{ forma.id }})">
+                    ✕
+                  </button>
+                </div>
+                <div class="msg-especificacao" id="msg-{{ forma.id }}"></div>
+              </div>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="5">
+            <div class="empty-state">
+              <div class="empty-state__icon">💳</div>
+              <div class="empty-state__title">Nenhuma forma cadastrada</div>
+              <div class="empty-state__desc">
+                Importe o SWFast primeiro e clique em "Verificar e sincronizar".
+              </div>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
     </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.especificacao-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.especificacao-view {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+.especificacao-edit {
+  flex: 1;
+}
+.especificacao-edit.hidden {
+  display: none;
+}
+.especificacao-input {
+  font-size: 12px;
+  padding: 6px 8px;
+}
+.msg-especificacao {
+  font-size: 11px;
+  padding: 4px 6px;
+  border-radius: 3px;
+  margin-top: 4px;
+  display: none;
+}
+.msg-especificacao.success {
+  background: #dcfce7;
+  color: #16a34a;
+  display: block;
+}
+.msg-especificacao.error {
+  background: #fee2e2;
+  color: #dc2626;
+  display: block;
+}
+.d-flex {
+  display: flex;
+}
+.gap-1 {
+  gap: 8px;
+}
+.align-center {
+  align-items: center;
+}
+.hidden {
+  display: none;
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function editarEspecificacao(formaId) {
+  document.getElementById('edit-' + formaId).classList.remove('hidden');
+  document.querySelector(`[data-forma-id="${formaId}"] .especificacao-view`).classList.add('hidden');
+  document.getElementById('inp-' + formaId).focus();
+  document.getElementById('inp-' + formaId).select();
+}
+
+function cancelarEdicao(formaId) {
+  document.getElementById('edit-' + formaId).classList.add('hidden');
+  document.querySelector(`[data-forma-id="${formaId}"] .especificacao-view`).classList.remove('hidden');
+  document.getElementById('msg-' + formaId).classList.remove('success', 'error');
+}
+
+function salvarEspecificacao(formaId) {
+  const novoValor = document.getElementById('inp-' + formaId).value.trim();
+  const msgEl = document.getElementById('msg-' + formaId);
+  const btnSalvar = event.target;
+
+  // Desabilita botão durante requisição
+  btnSalvar.disabled = true;
+  btnSalvar.textContent = '⏳';
+
+  fetch('/formas-pagamento/' + formaId + '/especificacao/', {
+    method: 'POST',
+    headers: {
+      'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || '{{ csrf_token }}',
+      'X-Requested-With': 'XMLHttpRequest',
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: 'especific_form_pgto=' + encodeURIComponent(novoValor),
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.status === 'success') {
+        // Atualiza badge
+        const badge = document.getElementById('esp-badge-' + formaId);
+        if (novoValor) {
+          badge.className = 'badge badge--green';
+          badge.textContent = novoValor;
+        } else {
+          badge.className = 'badge badge--red';
+          badge.textContent = '⚠️ Sem configuração';
+        }
+
+        // Mostra mensagem sucesso
+        msgEl.className = 'msg-especificacao success';
+        msgEl.textContent = '✓ Salvo com sucesso';
+
+        setTimeout(() => {
+          cancelarEdicao(formaId);
+        }, 1200);
+      } else {
+        msgEl.className = 'msg-especificacao error';
+        msgEl.textContent = '❌ ' + (data.message || 'Erro ao salvar');
+      }
+    })
+    .catch(err => {
+      msgEl.className = 'msg-especificacao error';
+      msgEl.textContent = '❌ Erro de conexão';
+      console.error('Erro:', err);
+    })
+    .finally(() => {
+      btnSalvar.disabled = false;
+      btnSalvar.textContent = '✓ Salvar';
+    });
+}
+
+// Enter para salvar
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    const inp = e.target;
+    if (inp.id && inp.id.startsWith('inp-')) {
+      const formaId = inp.id.replace('inp-', '');
+      salvarEspecificacao(formaId);
+    }
+  }
+});
+
+// Escape para cancelar
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const inp = e.target;
+    if (inp.id && inp.id.startsWith('inp-')) {
+      const formaId = inp.id.replace('inp-', '');
+      cancelarEdicao(formaId);
+    }
+  }
+});
+</script>
 {% endblock %}

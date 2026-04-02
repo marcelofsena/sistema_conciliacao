@@ -1,0 +1,150 @@
+{% extends 'base.html' %}
+
+{% block title %}Lançamento #{{ lanc.numero }} — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}
+  <a href="{% url 'lancamentos' %}">Lançamentos</a>
+  › #{{ lanc.numero }}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">
+      📝 Lançamento #{{ lanc.numero }}
+      <span class="badge
+        {% if lanc.tipo == 'NORMAL' %}badge--blue
+        {% elif lanc.tipo == 'CORRECAO' %}badge--amber
+        {% elif lanc.tipo == 'ESTORNO' %}badge--red
+        {% else %}badge--purple{% endif %}"
+        style="font-size:13px; vertical-align:middle;">
+        {{ lanc.get_tipo_display }}
+      </span>
+    </h1>
+    <p class="page-header__sub">
+      {{ lanc.loja.descricao }}
+      &nbsp;·&nbsp;
+      Período {{ lanc.periodo.mes|stringformat:"02d" }}/{{ lanc.periodo.ano }}
+      &nbsp;·&nbsp;
+      Registrado em {{ lanc.data_registro|date:"d/m/Y H:i" }}
+    </p>
+  </div>
+</div>
+
+<div style="max-width: 720px;">
+
+  <!-- Cabeçalho -->
+  <div class="card mb-3">
+    <div class="card-header">
+      <span class="card-header__title">📋 Cabeçalho</span>
+    </div>
+    <div class="card-body">
+      <div class="form-row form-row--2">
+        <div>
+          <div class="text-sm text-muted">Data do Lançamento</div>
+          <div style="font-weight:600;">{{ lanc.data_lancamento|date:"d/m/Y" }}</div>
+        </div>
+        <div>
+          <div class="text-sm text-muted">Usuário Responsável</div>
+          <div style="font-weight:600;">
+            {{ lanc.usuario.get_full_name|default:lanc.usuario.username|default:"Sistema" }}
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:12px;">
+        <div class="text-sm text-muted">Histórico</div>
+        <div style="font-weight:500; margin-top:2px;">{{ lanc.historico }}</div>
+      </div>
+      {% if lanc.evento %}
+      <div style="margin-top:12px;">
+        <div class="text-sm text-muted">Evento de Origem</div>
+        <div class="d-flex gap-1 mt-1">
+          <code class="badge badge--gray">{{ lanc.evento.tipo_evento.codigo }}</code>
+          <span class="text-sm">{{ lanc.evento.tipo_evento.descricao }}</span>
+        </div>
+      </div>
+      {% endif %}
+      {% if lanc.lancamento_referencia %}
+      <div style="margin-top:12px;">
+        <div class="text-sm text-muted">Lançamento de Referência</div>
+        <a href="{% url 'lancamento_detalhe' lanc.lancamento_referencia.pk %}" class="badge badge--amber">
+          #{{ lanc.lancamento_referencia.numero }} — {{ lanc.lancamento_referencia.historico|truncatechars:50 }}
+        </a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Partidas -->
+  <div class="card mb-3">
+    <div class="card-header">
+      <span class="card-header__title">📊 Partidas Dobradas</span>
+      <div class="d-flex gap-2 align-center" style="font-size:13px; font-weight:600;">
+        D: <span style="color:var(--blue);">R$ {{ total_d|floatformat:2 }}</span>
+        &nbsp;|&nbsp;
+        C: <span style="color:var(--amber, #f59e0b);">R$ {{ total_c|floatformat:2 }}</span>
+        &nbsp;
+        {% if total_d == total_c %}
+          <span class="badge badge--green">✓ Equilibrado</span>
+        {% else %}
+          <span class="badge badge--red">✗ Desequilibrado</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>D/C</th>
+            <th>Conta</th>
+            <th>Nome da Conta</th>
+            <th class="td-num">Valor</th>
+            <th>Histórico Complementar</th>
+            <th>Centro de Custo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in lanc.partidas.all %}
+          <tr>
+            <td>
+              {% if p.tipo == 'D' %}
+                <span class="badge badge--blue">D Débito</span>
+              {% else %}
+                <span class="badge badge--amber">C Crédito</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="badge badge--gray">{{ p.conta.codigo_reduzido }}</span>
+              <div class="text-sm text-muted">{{ p.conta.codigo_classificacao }}</div>
+            </td>
+            <td><strong>{{ p.conta.nome }}</strong></td>
+            <td class="td-num">R$ {{ p.valor|floatformat:2 }}</td>
+            <td class="text-muted text-sm">{{ p.historico_complementar|default:"—" }}</td>
+            <td class="text-muted text-sm">{{ p.centro_custo|default:"—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr style="background:var(--surface-alt); font-weight:700;">
+            <td colspan="3" style="padding:8px 12px; text-align:right;">Total</td>
+            <td class="td-num">R$ {{ total_d|floatformat:2 }}</td>
+            <td colspan="2"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+
+  <!-- Ações -->
+  <div class="d-flex gap-2">
+    <a href="{% url 'lancamentos' %}"
+       class="btn btn--outline btn--lg">← Voltar</a>
+    {% if lanc.periodo.status != 'FECHADO' and lanc.tipo != 'ESTORNO' %}
+      <a href="{% url 'lancamento_criar' %}"
+         class="btn btn--ghost btn--lg" title="Criar lançamento de estorno">
+        ↩ Estornar
+      </a>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

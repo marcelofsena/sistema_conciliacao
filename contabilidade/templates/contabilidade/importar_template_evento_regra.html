@@ -1,0 +1,169 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ titulo }} — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}
+  <a href="{% url 'templates_evento_regra' %}">Templates de Eventos e Regras</a>
+  › {{ titulo }}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">📥 {{ titulo }}</h1>
+    <p class="page-header__sub">
+      Importe eventos e suas regras contábeis pré-configuradas para sua loja.<br>
+      <strong>⚠️ Certifique-se de que o Plano de Contas foi importado primeiro!</strong>
+    </p>
+  </div>
+</div>
+
+<div style="max-width: 700px;">
+  <!-- Informações do Template -->
+  <div class="card mb-3">
+    <div class="card-header">
+      <span class="card-header__title">📋 Template: {{ template.nome }}</span>
+    </div>
+    <div class="card-body">
+      {% if template.descricao %}
+      <p style="margin-bottom: 16px;">{{ template.descricao }}</p>
+      {% endif %}
+
+      <div style="background: var(--surface-alt); padding: 12px; border-radius: 4px; margin-bottom: 16px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; font-size: 13px;">
+          <div>
+            <strong>📅 Total de Eventos:</strong><br>
+            <span style="font-size: 24px; font-weight: 700; color: #1976d2;">{{ template.eventos.count }}</span>
+          </div>
+          <div>
+            <strong>📋 Total de Regras:</strong><br>
+            <span style="font-size: 24px; font-weight: 700; color: #1976d2;">{{ template.regras.count }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lista de eventos com regras -->
+      <div style="max-height: 400px; overflow-y: auto; border: 1px solid var(--border); border-radius: 4px; padding: 12px;">
+        {% for evento in template.eventos.all %}
+        <div style="margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border);">
+          <div style="font-weight: 600; margin-bottom: 6px;">
+            <code style="background: #f0f0f0; padding: 4px 6px; border-radius: 2px;">{{ evento.codigo }}</code>
+            <span style="color: var(--text-muted); font-size: 12px;">— {{ evento.modulo_origem }}</span>
+          </div>
+          <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">{{ evento.descricao }}</div>
+          <div style="font-size: 11px; padding-left: 12px;">
+            <strong>Regras:</strong>
+            {% for regra in evento.regras.all %}
+              <div style="padding: 4px 0;">
+                <span style="color: #666;">→ {{ regra.descricao }}</span>
+                <span style="color: #999;">({{ regra.partidas.count }} partida(s))</span>
+              </div>
+            {% empty %}
+              <div style="color: #999; padding: 4px 0;">Nenhuma regra</div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Seleção de Loja e Confirmação -->
+  {% if lojas %}
+  <form method="POST" novalidate>
+    {% csrf_token %}
+
+    <div class="card mb-3">
+      <div class="card-header">
+        <span class="card-header__title">🏪 Selecione a Loja</span>
+      </div>
+      <div class="card-body">
+        <div class="form-group">
+          <label class="form-label">Loja Destino <span class="required">*</span></label>
+          <select name="loja" class="form-control" required onchange="validarPlanoContas()">
+            <option value="">— Selecione uma loja —</option>
+            {% for loja_opt in lojas %}
+            <option value="{{ loja_opt.id_empresa }}" {% if loja and loja.id_empresa == loja_opt.id_empresa %}selected{% endif %}>
+              {{ loja_opt.descricao }}
+            </option>
+            {% endfor %}
+          </select>
+          <div class="form-hint">Os eventos e regras serão criados nesta loja.</div>
+        </div>
+
+        {% if loja %}
+        <div id="info-loja" style="background: #f0f9ff; padding: 12px; border-radius: 4px; margin-top: 12px;">
+          <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">Loja selecionada:</div>
+          <div style="font-weight: 600; color: #1976d2;">{{ loja.descricao }}</div>
+        </div>
+
+        <!-- Erro: Plano de Contas não encontrado -->
+        {% if erro_plano_contas %}
+        <div style="background: #fee2e2; padding: 12px; border-radius: 4px; margin-top: 12px; border-left: 4px solid #dc2626;">
+          <div style="font-weight: 600; color: #7f1d1d; margin-bottom: 8px;">❌ Plano de Contas não encontrado</div>
+          <p style="margin: 0 0 12px 0; color: #7f1d1d; font-size: 13px;">
+            É necessário importar o <strong>Plano de Contas</strong> ANTES de importar eventos e regras contábeis.
+          </p>
+          <a href="{% url 'templates_plano_contas' %}" class="btn btn--primary btn--sm">
+            📋 Ir para Templates de Contas
+          </a>
+        </div>
+        {% endif %}
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Confirmação -->
+    <div class="card" style="background: #fef3c7; border-left: 4px solid #f59e0b;">
+      <div class="card-body">
+        <strong style="color: #92400e;">⚠️ Importante</strong>
+        <ul style="margin: 8px 0 0 0; padding-left: 20px; font-size: 13px; color: #92400e;">
+          <li>Certifique-se de que o <strong>Plano de Contas</strong> foi importado antes de importar os eventos e regras.</li>
+          <li>Se contas analíticas não forem encontradas, as partidas das regras não serão criadas.</li>
+          <li>Eventos e regras existentes com o mesmo código serão atualizados.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="d-flex gap-2" style="margin-top: 16px;">
+      <button type="submit" class="btn btn--primary btn--lg" {% if not loja or erro_plano_contas %}disabled{% endif %}>
+        📥 Importar Template
+      </button>
+      <a href="{% url 'templates_evento_regra' %}" class="btn btn--outline btn--lg">Cancelar</a>
+    </div>
+  </form>
+
+  {% else %}
+  <div class="card" style="background: #fee2e2; border-left: 4px solid #dc2626;">
+    <div class="card-body">
+      <strong style="color: #7f1d1d;">❌ Nenhuma loja disponível</strong>
+      <p style="margin: 8px 0 0 0; color: #7f1d1d;">
+        Você não tem acesso a nenhuma loja. Entre em contato com o administrador.
+      </p>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+// Dados das lojas que têm plano de contas (será preenchido pelo servidor)
+const lojasComPlanoContas = {
+  // Será preenchido dinamicamente
+};
+
+function validarPlanoContas() {
+  const select = document.querySelector('select[name="loja"]');
+  const lojaId = select.value;
+  const submitBtn = document.querySelector('button[type="submit"]');
+
+  // Se não selecionou loja, desabilita
+  if (!lojaId) {
+    submitBtn.disabled = true;
+    return;
+  }
+
+  // Se selecionou loja, habilita (a validação real é feita no servidor)
+  submitBtn.disabled = false;
+}
+</script>
+
+{% endblock %}

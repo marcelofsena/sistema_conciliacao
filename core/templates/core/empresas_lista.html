@@ -1,0 +1,96 @@
+{% extends 'base.html' %}
+
+{% block title %}Empresas / Lojas — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}Empresas / Lojas{% endblock %}
+
+{% block topbar_actions %}
+  <a href="{% url 'empresa_criar' %}" class="btn btn--primary btn--sm">+ Nova empresa</a>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">🏪 Empresas / Lojas</h1>
+    <p class="page-header__sub">Cadastro de lojas e configuração dos códigos de integração.</p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Empresa / Loja</th>
+          <th>CNPJ</th>
+          <th class="td-num">Cód. SWFast</th>
+          <th class="td-num">Cód. Stone</th>
+          <th class="td-num">Cód. iFood</th>
+          <th>PDV Integrado</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for emp in empresas %}
+        <tr>
+          <td>
+            <strong>{{ emp.descricao }}</strong>
+            <div class="text-sm text-muted">#{{ emp.id_empresa }}</div>
+          </td>
+          <td class="text-muted">{{ emp.cnpj|default:"—" }}</td>
+          <td class="td-num">
+            {% if emp.ncad_swfast %}<span class="badge badge--gray">{{ emp.ncad_swfast }}</span>{% else %}—{% endif %}
+          </td>
+          <td class="td-num">
+            {% if emp.ncad_cartoes %}<span class="badge badge--gray">{{ emp.ncad_cartoes }}</span>{% else %}—{% endif %}
+          </td>
+          <td class="td-num">
+            {% if emp.ncad_ifood %}<span class="badge badge--gray">{{ emp.ncad_ifood }}</span>{% else %}—{% endif %}
+          </td>
+          <td>
+            {% if emp.integrado == 'Sim' %}
+              <span class="badge badge--green">✓ Sim</span>
+            {% else %}
+              <span class="badge badge--gray">Não</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if emp.ativa %}
+              <span class="badge badge--green">Ativa</span>
+            {% else %}
+              <span class="badge badge--red">Inativa</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="d-flex gap-1">
+              <a href="{% url 'empresa_editar' emp.pk %}" class="btn btn--outline btn--sm">Editar</a>
+              <form method="POST" action="{% url 'empresa_toggle' emp.pk %}" style="display:inline;">
+                {% csrf_token %}
+                <button type="submit"
+                        class="btn btn--sm {% if emp.ativa %}btn--ghost{% else %}btn--success{% endif %}"
+                        data-confirm="{% if emp.ativa %}Desativar {{ emp.descricao }}?{% else %}Ativar {{ emp.descricao }}?{% endif %}">
+                  {% if emp.ativa %}Desativar{% else %}Ativar{% endif %}
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8">
+            <div class="empty-state">
+              <div class="empty-state__icon">🏪</div>
+              <div class="empty-state__title">Nenhuma empresa cadastrada</div>
+              <div class="empty-state__desc">
+                Cadastre a primeira loja para começar a usar o sistema.
+              </div>
+              <a href="{% url 'empresa_criar' %}" class="btn btn--primary">+ Cadastrar empresa</a>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

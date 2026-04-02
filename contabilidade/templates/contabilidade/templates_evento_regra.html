@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+
+{% block title %}Templates de Eventos e Regras — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}Templates de Eventos e Regras{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">🎯 Templates de Eventos e Regras</h1>
+    <p class="page-header__sub">Importe eventos e suas regras contábeis pré-configuradas para sua loja.</p>
+  </div>
+</div>
+
+{% if templates %}
+<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px;">
+  {% for template in templates %}
+  <div class="card">
+    <div class="card-header">
+      <span class="card-header__title">{{ template.nome }}</span>
+    </div>
+    <div class="card-body">
+      {% if template.descricao %}
+      <p style="margin: 0 0 12px 0; color: var(--text-muted); font-size: 13px;">
+        {{ template.descricao }}
+      </p>
+      {% endif %}
+
+      <div style="background: var(--surface-alt); padding: 12px; border-radius: 4px; margin: 12px 0; font-size: 13px;">
+        <div><strong>📅 Eventos:</strong> {{ template.eventos.count }}</div>
+        <div><strong>📋 Regras:</strong> {{ template.regras.count }}</div>
+      </div>
+
+      <div style="max-height: 200px; overflow-y: auto; margin: 12px 0; padding: 8px; background: #f9fafb; border-radius: 4px; font-size: 12px;">
+        <strong style="color: var(--text-muted);">Eventos inclusos:</strong>
+        {% for evento in template.eventos.all %}
+          <div style="padding: 4px 0; color: #666;">
+            <code style="background: #fff; padding: 2px 4px; border-radius: 2px;">{{ evento.codigo }}</code>
+            — {{ evento.modulo_origem }}
+          </div>
+        {% endfor %}
+      </div>
+
+      <a href="{% url 'importar_template_evento_regra' template.pk %}"
+         class="btn btn--primary btn--sm" style="width: 100%; text-align: center;">
+        📥 Importar para minha loja
+      </a>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% else %}
+<div class="card">
+  <div class="card-body">
+    <div class="empty-state" style="padding: 48px 16px;">
+      <div class="empty-state__icon">🎯</div>
+      <div class="empty-state__title">Nenhum template disponível</div>
+      <div class="empty-state__desc">
+        Templates de eventos e regras serão criados pelo administrador do sistema.
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

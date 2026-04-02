@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+
+{% block title %}Registrar Recebimento — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}
+  <a href="{% url 'contas_receber' %}">Contas a Receber</a>
+  › Registrar Recebimento
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">✓ Registrar Recebimento</h1>
+    <p class="page-header__sub">Loja: <strong>{{ cr.loja.descricao }}</strong></p>
+  </div>
+</div>
+
+<div style="max-width: 520px;">
+
+  <!-- Resumo do título -->
+  <div class="card mb-3">
+    <div class="card-header">
+      <span class="card-header__title">📋 Título</span>
+    </div>
+    <div class="card-body">
+      <div style="font-size:16px; font-weight:700; margin-bottom:10px;">{{ cr.descricao }}</div>
+      <div class="form-row form-row--2">
+        <div>
+          <div class="text-sm text-muted">Valor Original</div>
+          <div style="font-weight:600;">R$ {{ cr.valor_original|floatformat:2 }}</div>
+        </div>
+        <div>
+          <div class="text-sm text-muted">Já Recebido</div>
+          <div style="font-weight:600; color:var(--green,#16a34a);">R$ {{ cr.valor_recebido|floatformat:2 }}</div>
+        </div>
+        <div>
+          <div class="text-sm text-muted">Saldo em Aberto</div>
+          <div style="font-weight:700; font-size:18px; color:var(--amber,#f59e0b);">R$ {{ cr.saldo|floatformat:2 }}</div>
+        </div>
+        <div>
+          <div class="text-sm text-muted">Vencimento</div>
+          <div style="font-weight:600;">{{ cr.data_vencimento|date:"d/m/Y" }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Formulário de baixa -->
+  <div class="card mb-3">
+    <div class="card-header">
+      <span class="card-header__title">💰 Dados do Recebimento</span>
+    </div>
+    <div class="card-body">
+      <form method="POST" novalidate>
+        {% csrf_token %}
+
+        <div class="form-row form-row--2">
+          <div class="form-group">
+            <label class="form-label">{{ form.valor_recebido.label }} <span class="required">*</span></label>
+            {{ form.valor_recebido }}
+            <div class="form-hint">Máx: R$ {{ cr.saldo|floatformat:2 }}</div>
+            {% if form.valor_recebido.errors %}
+              <div class="form-error">❌ {{ form.valor_recebido.errors|join:", " }}</div>
+            {% endif %}
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ form.data_recebimento.label }} <span class="required">*</span></label>
+            {{ form.data_recebimento }}
+            {% if form.data_recebimento.errors %}
+              <div class="form-error">❌ {{ form.data_recebimento.errors|join:", " }}</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">{{ form.observacoes.label }}</label>
+          {{ form.observacoes }}
+        </div>
+
+        <!-- Botão preencher saldo total -->
+        <div style="margin-bottom:12px;">
+          <button type="button" class="btn btn--ghost btn--sm"
+                  onclick="document.querySelector('[name=valor_recebido]').value='{{ cr.saldo }}'">
+            Preencher saldo total (R$ {{ cr.saldo|floatformat:2 }})
+          </button>
+        </div>
+
+        <div class="d-flex gap-2">
+          <button type="submit" class="btn btn--success btn--lg">✓ Confirmar Recebimento</button>
+          <a href="{% url 'contas_receber' %}"
+             class="btn btn--outline btn--lg">Cancelar</a>
+        </div>
+
+      </form>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

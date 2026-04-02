@@ -1,0 +1,345 @@
+{% extends 'base.html' %}
+
+{% block title %}Plano de Contas — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}Plano de Contas{% endblock %}
+
+{% block topbar_actions %}
+  {% if loja %}
+    <a href="{% url 'sintetica_criar' %}" class="btn btn--primary btn--sm">
+      ➕ Nova Sintética
+    </a>
+    {% if sintetica_selecionada %}
+      {% if sintetica_selecionada.nivel < 4 %}
+      <a href="{% url 'sintetica_criar' %}?pai={{ sintetica_selecionada.pk }}"
+         class="btn btn--outline btn--sm">
+        + Subconta
+      </a>
+      {% elif sintetica_selecionada.nivel == 4 %}
+      <a href="{% url 'analitica_criar' %}?sintetica={{ sintetica_selecionada.pk }}"
+         class="btn btn--outline btn--sm">
+        ➕ Nova Analítica
+      </a>
+      {% endif %}
+    {% endif %}
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">📒 Plano de Contas</h1>
+    <p class="page-header__sub">Estrutura hierárquica de contas sintéticas e analíticas por loja.</p>
+  </div>
+</div>
+
+{% if loja %}
+<div class="split-layout">
+
+  <!-- ===== ÁRVORE DE CONTAS SINTÉTICAS ===== -->
+  <aside class="split-layout__sidebar" style="min-width: 300px; max-width: 340px;">
+    <div class="card" style="overflow: hidden;">
+      <div class="card-header">
+        <span class="card-header__title">🌳 Contas Sintéticas</span>
+        <a href="{% url 'sintetica_criar' %}"
+           class="btn btn--ghost btn--sm" title="Nova conta">+</a>
+      </div>
+
+      {% if arvore %}
+      <div style="max-height: 70vh; overflow-y: auto;" id="arvore-contas">
+        {% for conta in arvore %}
+        <a href="?sintetica={{ conta.pk }}"
+           id="conta-{{ conta.pk }}"
+           class="tree-node {% if sintetica_selecionada and sintetica_selecionada.pk == conta.pk %}tree-node--active{% endif %}"
+           style="padding-left: calc(16px + {{ conta.profundidade_arvore }}rem);"
+           title="{% if conta.filhas.count > 0 %}Tem {{ conta.filhas.count }} subconta(s){% endif %}">
+          <span class="tree-node__code">{{ conta.codigo_classificacao }}</span>
+          <span class="tree-node__name">{{ conta.nome }}</span>
+
+          <!-- Badge de tipo -->
+          <span class="tree-node__badge badge
+            {% if conta.tipo_conta == 'ATIVO' %}badge--green
+            {% elif conta.tipo_conta == 'PASSIVO' %}badge--red
+            {% elif conta.tipo_conta == 'RECEITA' %}badge--blue
+            {% elif conta.tipo_conta == 'DESPESA' %}badge--amber
+            {% else %}badge--purple{% endif %}">
+            {{ conta.get_tipo_conta_display }}
+          </span>
+
+          <!-- Badge de aviso se tem filhas -->
+          {% if conta.filhas.count > 0 %}
+          <span class="tree-node__badge badge--info" title="Esta conta já tem {{ conta.filhas.count }} subconta(s)">
+            👶 {{ conta.filhas.count }}
+          </span>
+          {% endif %}
+        </a>
+        {% endfor %}
+      </div>
+
+      <!-- Script para scroll automático para a conta selecionada -->
+      {% if sintetica_selecionada %}
+      <script>
+        document.addEventListener('DOMContentLoaded', function() {
+          const elemento = document.getElementById('conta-{{ sintetica_selecionada.pk }}');
+          if (elemento) {
+            // Scroll para deixar a conta selecionada no centro da visualização
+            elemento.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        });
+      </script>
+      {% endif %}
+      {% else %}
+      <div class="card-body">
+        <div class="empty-state" style="padding: 32px 16px;">
+          <div class="empty-state__icon">📒</div>
+          <div class="empty-state__title" style="font-size:14px;">Plano de contas vazio</div>
+          <div class="empty-state__desc" style="font-size:12px;">
+            Importe um template pronto ou crie manualmente.
+          </div>
+          <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
+            <a href="{% url 'importar_plano_contas' %}"
+               class="btn btn--primary btn--sm">Importar Plano Modelo</a>
+            <a href="{% url 'sintetica_criar' %}"
+               class="btn btn--outline btn--sm">+ Criar conta</a>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </aside>
+
+  <!-- ===== PAINEL DIREITO: ANALÍTICAS ===== -->
+  <section class="split-layout__main">
+    {% if sintetica_selecionada %}
+
+    <!-- Info da sintética selecionada -->
+    <div class="card mb-3">
+      <div class="card-body" style="padding: 16px 20px;">
+        <div class="d-flex align-center gap-2">
+          <div style="flex: 1;">
+            <div class="text-sm text-muted" style="margin-bottom: 4px;">Conta Sintética Selecionada</div>
+            <div style="font-size:17px; font-weight:700;">
+              {{ sintetica_selecionada.codigo_classificacao }} — {{ sintetica_selecionada.nome }}
+            </div>
+            <div class="d-flex gap-1 mt-1">
+              <span class="badge
+                {% if sintetica_selecionada.tipo_conta == 'ATIVO' %}badge--green
+                {% elif sintetica_selecionada.tipo_conta == 'PASSIVO' %}badge--red
+                {% elif sintetica_selecionada.tipo_conta == 'RECEITA' %}badge--blue
+                {% elif sintetica_selecionada.tipo_conta == 'DESPESA' %}badge--amber
+                {% else %}badge--purple{% endif %}">
+                {{ sintetica_selecionada.get_tipo_conta_display }}
+              </span>
+              <span class="badge badge--gray">Nível {{ sintetica_selecionada.nivel }}</span>
+              {% if sintetica_selecionada.conta_pai %}
+                <span class="badge badge--gray">
+                  Pai: {{ sintetica_selecionada.conta_pai.codigo_classificacao }}
+                </span>
+              {% endif %}
+              <!-- Badge de indicação de filhas sintéticas ou analíticas conforme nível -->
+              {% if sintetica_selecionada.nivel < 4 %}
+                {% if sintetica_selecionada.filhas.count > 0 %}
+                <span class="badge badge--info" title="Esta conta tem {{ sintetica_selecionada.filhas.count }} subconta(s) sintética(s)">
+                  👶 {{ sintetica_selecionada.filhas.count }} subcontas
+                </span>
+                {% else %}
+                <span class="badge" style="background: #e0e0e0; color: #666;">
+                  📄 Sem subcontas
+                </span>
+                {% endif %}
+              {% elif sintetica_selecionada.nivel == 4 %}
+                {% if sintetica_selecionada.contas_analiticas.count > 0 %}
+                <span class="badge badge--blue" title="Esta conta tem {{ sintetica_selecionada.contas_analiticas.count }} conta(s) analítica(s)">
+                  📊 {{ sintetica_selecionada.contas_analiticas.count }} analíticas
+                </span>
+                {% else %}
+                <span class="badge" style="background: #ffe0b2; color: #e65100;">
+                  ⚠️ Sem analíticas
+                </span>
+                {% endif %}
+              {% endif %}
+            </div>
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <a href="{% url 'sintetica_editar' sintetica_selecionada.pk %}"
+               class="btn btn--outline btn--sm">✏️ Editar</a>
+            {% if sintetica_selecionada.nivel < 4 %}
+            <a href="{% url 'sintetica_criar' %}&pai={{ sintetica_selecionada.pk }}"
+               class="btn btn--primary btn--sm">+ Subconta</a>
+            {% elif sintetica_selecionada.nivel == 4 %}
+            <a href="{% url 'analitica_criar' %}?sintetica={{ sintetica_selecionada.pk }}"
+               class="btn btn--primary btn--sm">+ Nova Analítica</a>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Info sobre próximo código analítico -->
+    {% if sintetica_selecionada.nivel == 4 and contas_analiticas %}
+    <div class="card mb-3" style="background: #f5f5f5; border-left: 3px solid #1976d2;">
+      <div class="card-body" style="padding: 12px 16px;">
+        <div style="font-size: 13px;">
+          <strong>Códigos analíticos existentes para {{ sintetica_selecionada.codigo_classificacao }}:</strong>
+          <div style="margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px;">
+            {% for ca in contas_analiticas %}
+            <span class="badge badge--blue">{{ ca.codigo_classificacao|slice:"-4:" }} — {{ ca.nome|truncatewords:3 }}</span>
+            {% endfor %}
+          </div>
+          <div style="margin-top: 8px; font-size: 12px; color: #666;">
+            💡 Próximo código: <strong style="color: #1976d2;">{{ sintetica_selecionada.codigo_classificacao }}.000{{ contas_analiticas|length|add:1 }}</strong>
+            (últimos 4 dígitos extraídos automaticamente)
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Tabela de analíticas -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-header__title">📋 Contas Analíticas
+          <span class="badge badge--gray" style="margin-left:6px;">{{ contas_analiticas|length }}</span>
+        </span>
+        {% if sintetica_selecionada.nivel == 4 %}
+        <a href="{% url 'analitica_criar' %}?sintetica={{ sintetica_selecionada.pk }}"
+           class="btn btn--primary btn--sm">+ Nova analítica</a>
+        {% endif %}
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th title="Código Reduzido (últimos 4 dígitos)">Red.</th>
+              <th>Classificação Completa</th>
+              <th>Nome da Conta</th>
+              <th>Natureza</th>
+              <th>Lançamentos</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ca in contas_analiticas %}
+            <tr>
+              <td>
+                <span class="badge badge--blue" title="Código reduzido extraído dos últimos 4 dígitos">
+                  {{ ca.codigo_classificacao|slice:"-4:" }}
+                </span>
+              </td>
+              <td class="text-muted text-sm">{{ ca.codigo_classificacao }}</td>
+              <td><strong>{{ ca.nome }}</strong></td>
+              <td>
+                <span class="badge
+                  {% if ca.natureza_saldo == 'DEVEDOR' %}badge--blue
+                  {% elif ca.natureza_saldo == 'CREDOR' %}badge--amber
+                  {% else %}badge--purple{% endif %}">
+                  {{ ca.get_natureza_saldo_display }}
+                </span>
+              </td>
+              <td>
+                {% if ca.aceita_lancamento %}
+                  <span class="badge badge--green">✓ Aceita</span>
+                {% else %}
+                  <span class="badge badge--red">Bloqueada</span>
+                {% endif %}
+              </td>
+              <td>
+                <a href="{% url 'analitica_editar' ca.pk %}" class="btn btn--ghost btn--sm">✏️</a>
+              </td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="6">
+                <div class="empty-state" style="padding: 32px 16px;">
+                  <div class="empty-state__icon">📋</div>
+                  <div class="empty-state__title" style="font-size:14px;">Nenhuma conta analítica</div>
+                  <div class="empty-state__desc" style="font-size:12px;">
+                    As contas analíticas são onde os lançamentos são realizados.
+                  </div>
+                  <a href="{% url 'analitica_criar' %}?sintetica={{ sintetica_selecionada.pk }}"
+                     class="btn btn--primary btn--sm">+ Criar analítica</a>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {% else %}
+    <div class="empty-state" style="padding-top: 80px;">
+      <div class="empty-state__icon">👈</div>
+      <div class="empty-state__title">Selecione uma conta sintética</div>
+      <div class="empty-state__desc">
+        Clique em um item da árvore à esquerda para visualizar e gerenciar suas contas analíticas.
+      </div>
+    </div>
+    {% endif %}
+  </section>
+
+</div>
+
+{% else %}
+<div class="empty-state" style="padding-top: 80px;">
+  <div class="empty-state__icon">📒</div>
+  <div class="empty-state__title">Selecione uma loja</div>
+  <div class="empty-state__desc">
+    Use o seletor acima para escolher a loja e visualizar seu plano de contas.
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.tree-node {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary); text-decoration: none;
+  transition: all var(--transition);
+  font-size: 13px;
+}
+.tree-node:last-child { border-bottom: none; }
+.tree-node:hover { background: var(--surface-alt); }
+
+/* Estilo melhorado para conta ativa/selecionada */
+.tree-node--active {
+  background: linear-gradient(90deg, #eff6ff 0%, #e3f2fd 100%);
+  border-left: 4px solid #1976d2;
+  padding-left: calc(16px + var(--padding) - 1px);
+  font-weight: 500;
+  box-shadow: inset -2px 0px 8px rgba(25, 118, 210, 0.1);
+}
+
+.tree-node--active .tree-node__code {
+  color: #1976d2;
+  font-weight: 700;
+}
+
+.tree-node--active .tree-node__name {
+  color: #1565c0;
+  font-weight: 600;
+}
+
+.tree-node__code { font-size: 11px; font-weight: 700; color: var(--text-muted); min-width: 54px; flex-shrink: 0; }
+.tree-node__name { flex: 1; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Badges */
+.badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge--green { background: #c8e6c9; color: #2e7d32; }
+.badge--red { background: #ffcdd2; color: #c62828; }
+.badge--blue { background: #bbdefb; color: #0d47a1; }
+.badge--amber { background: #ffe0b2; color: #e65100; }
+.badge--purple { background: #e1bee7; color: #7b1fa2; }
+.badge--info { background: #b3e5fc; color: #01579b; }
+</style>
+{% endblock %}

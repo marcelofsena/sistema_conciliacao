@@ -1,0 +1,103 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ titulo }} — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}
+  <a href="{% url 'empresas_lista' %}">Empresas</a> › {{ titulo }}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">🏪 {{ titulo }}</h1>
+    <p class="page-header__sub">Configure os dados cadastrais e os códigos de integração da loja.</p>
+  </div>
+</div>
+
+<div style="max-width: 680px;">
+  <form method="POST" novalidate>
+    {% csrf_token %}
+
+    <!-- Dados gerais -->
+    <div class="card mb-3">
+      <div class="card-header">
+        <span class="card-header__title">📋 Dados da empresa</span>
+      </div>
+      <div class="card-body">
+
+        <div class="form-group">
+          <label class="form-label">
+            {{ form.descricao.label }} <span class="required">*</span>
+          </label>
+          {{ form.descricao }}
+          {% if form.descricao.errors %}
+            <div class="form-error">❌ {{ form.descricao.errors|join:", " }}</div>
+          {% endif %}
+        </div>
+
+        <div class="form-row form-row--2">
+          <div class="form-group">
+            <label class="form-label">{{ form.cnpj.label }}</label>
+            {{ form.cnpj }}
+          </div>
+          <div class="form-group" style="padding-top: 28px;">
+            <label class="form-check">
+              {{ form.ativa }}
+              <label>{{ form.ativa.label }}</label>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">{{ form.integrado.label }}</label>
+          {{ form.integrado }}
+          <div class="form-hint">Define se o PDV envia automaticamente dados de abertura/fechamento.</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Códigos de integração -->
+    <div class="card mb-3">
+      <div class="card-header">
+        <span class="card-header__title">🔌 Códigos de integração</span>
+      </div>
+      <div class="card-body">
+        <div class="form-row form-row--3">
+          <div class="form-group">
+            <label class="form-label">{{ form.ncad_swfast.label }}</label>
+            {{ form.ncad_swfast }}
+            <div class="form-hint">Código do PDV SWFast</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ form.ncad_cartoes.label }}</label>
+            {{ form.ncad_cartoes }}
+            <div class="form-hint">Stonecode (adquirente)</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ form.ncad_ifood.label }}</label>
+            {{ form.ncad_ifood }}
+            <div class="form-hint">ID do restaurante no portal</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ form.ncad_mp.label }}</label>
+            {{ form.ncad_mp }}
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ form.ncad_outros.label }}</label>
+            {{ form.ncad_outros }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ações -->
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn--primary btn--lg">
+        💾 {{ acao }}
+      </button>
+      <a href="{% url 'empresas_lista' %}" class="btn btn--outline btn--lg">Cancelar</a>
+    </div>
+
+  </form>
+</div>
+{% endblock %}

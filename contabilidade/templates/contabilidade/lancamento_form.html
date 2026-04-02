@@ -1,0 +1,270 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ titulo }} — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}
+  <a href="{% url 'lancamentos' %}{% if loja %}{% endif %}">Lançamentos</a>
+  › {{ titulo }}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">📝 {{ titulo }}</h1>
+    <p class="page-header__sub">
+      Lançamento em partidas dobradas. Débitos e créditos devem se equilibrar.
+      {% if loja %}<strong>Loja: {{ loja.descricao }}</strong>{% endif %}
+    </p>
+  </div>
+</div>
+
+<form method="POST" novalidate id="form-lancamento">
+  {% csrf_token %}
+  {{ form.loja }}
+
+  <div style="max-width: 720px;">
+
+    <!-- Cabeçalho do Lançamento -->
+    <div class="card mb-3">
+      <div class="card-header">
+        <span class="card-header__title">📋 Cabeçalho do Lançamento</span>
+      </div>
+      <div class="card-body">
+
+        <div class="form-row form-row--2">
+          <div class="form-group">
+            <label class="form-label">{{ form.data_lancamento.label }} <span class="required">*</span></label>
+            {{ form.data_lancamento }}
+            <div class="form-hint">O período contábil é determinado automaticamente pela data.</div>
+            {% if form.data_lancamento.errors %}
+              <div class="form-error">❌ {{ form.data_lancamento.errors|join:", " }}</div>
+            {% endif %}
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ form.tipo.label }}</label>
+            {{ form.tipo }}
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">{{ form.historico.label }} <span class="required">*</span></label>
+          {{ form.historico }}
+          {% if form.historico.errors %}
+            <div class="form-error">❌ {{ form.historico.errors|join:", " }}</div>
+          {% endif %}
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Partidas -->
+    <div class="card mb-3">
+      <div class="card-header">
+        <span class="card-header__title">
+          📊 Partidas Dobradas
+        </span>
+        <div class="d-flex gap-2 align-center">
+          <!-- Balancômetro -->
+          <div id="balancometro" style="font-size:13px; font-weight:600;">
+            D: <span id="total-d" style="color:var(--blue);">0,00</span>
+            &nbsp;|&nbsp;
+            C: <span id="total-c" style="color:var(--amber, #f59e0b);">0,00</span>
+            &nbsp;
+            <span id="status-equilibrio" class="badge">—</span>
+          </div>
+          <button type="button" class="btn btn--outline btn--sm" onclick="adicionarPartida()">
+            + Linha
+          </button>
+        </div>
+      </div>
+      <div class="table-wrapper">
+        <table id="tabela-partidas">
+          <thead>
+            <tr>
+              <th style="width:36px;"></th>
+              <th>Conta Analítica</th>
+              <th style="width:80px;">D/C</th>
+              <th style="width:130px;">Valor (R$)</th>
+              <th>Histórico Complementar</th>
+              <th style="width:120px;">Centro de Custo</th>
+            </tr>
+          </thead>
+          <tbody id="partidas-body">
+            <!-- linhas injetadas por JS -->
+          </tbody>
+        </table>
+      </div>
+      <div class="card-body" style="padding:10px 16px; border-top:1px solid var(--border);">
+        <span class="text-sm text-muted" id="msg-partidas">Mínimo 2 partidas. Débitos = Créditos.</span>
+      </div>
+    </div>
+
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn--primary btn--lg" id="btn-salvar">💾 {{ acao }}</button>
+      <a href="{% url 'lancamentos' %}{% if loja %}{% endif %}"
+         class="btn btn--outline btn--lg">Cancelar</a>
+    </div>
+
+  </div>
+</form>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+#tabela-partidas td { vertical-align: middle; padding: 6px 10px; }
+.partida-row select,
+.partida-row input { font-size: 13px; padding: 5px 8px; }
+.btn-remover-partida {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-muted); font-size: 16px; padding: 2px 6px;
+  border-radius: 4px; transition: color .15s;
+}
+.btn-remover-partida:hover { color: var(--red, #ef4444); }
+#status-equilibrio.ok   { background: #dcfce7; color: #16a34a; }
+#status-equilibrio.erro { background: #fee2e2; color: #dc2626; }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Catálogo de contas analíticas passado pelo servidor
+const CONTAS = {{ contas_json }};
+
+let linhaIdx = 0;
+
+function buildSelectContas(selectedId) {
+  let html = '<option value="">— Selecione a conta —</option>';
+  CONTAS.forEach(c => {
+    const sel = (String(c.id) === String(selectedId)) ? 'selected' : '';
+    html += `<option value="${c.id}" ${sel} data-cc="${c.centro_custo ? '1' : '0'}">
+      ${c.codigo_reduzido} — ${c.nome}
+    </option>`;
+  });
+  return html;
+}
+
+function adicionarPartida(conta_id, tipo, valor, hist, cc) {
+  const idx = linhaIdx++;
+  const tr = document.createElement('tr');
+  tr.className = 'partida-row';
+  tr.dataset.idx = idx;
+  tr.innerHTML = `
+    <td>
+      <button type="button" class="btn-remover-partida" onclick="removerPartida(${idx})" title="Remover">✕</button>
+    </td>
+    <td>
+      <select name="partida_conta" class="form-control partida-conta" onchange="onContaChange(this)" required>
+        ${buildSelectContas(conta_id || '')}
+      </select>
+    </td>
+    <td>
+      <select name="partida_tipo" class="form-control partida-tipo" onchange="recalcular()" required>
+        <option value="D" ${tipo === 'D' ? 'selected' : ''}>D — Débito</option>
+        <option value="C" ${tipo === 'C' ? 'selected' : ''}>C — Crédito</option>
+      </select>
+    </td>
+    <td>
+      <input type="text" name="partida_valor" class="form-control partida-valor input-money"
+             value="${valor || ''}" placeholder="0,00" onblur="recalcular()" required>
+    </td>
+    <td>
+      <input type="text" name="partida_historico" class="form-control" style="min-width:0;"
+             value="${hist || ''}" placeholder="Opcional">
+    </td>
+    <td>
+      <input type="text" name="partida_centro_custo" class="form-control partida-cc"
+             value="${cc || ''}" placeholder="—" style="font-size:12px;">
+    </td>
+  `;
+  document.getElementById('partidas-body').appendChild(tr);
+  recalcular();
+}
+
+function removerPartida(idx) {
+  const rows = document.querySelectorAll('.partida-row');
+  if (rows.length <= 2) {
+    alert('O lançamento precisa de no mínimo 2 partidas.');
+    return;
+  }
+  document.querySelector(`.partida-row[data-idx="${idx}"]`).remove();
+  recalcular();
+}
+
+function onContaChange(sel) {
+  const opt = sel.options[sel.selectedIndex];
+  const exigeCC = opt && opt.dataset.cc === '1';
+  const tr = sel.closest('tr');
+  const ccInput = tr.querySelector('.partida-cc');
+  if (exigeCC) {
+    ccInput.setAttribute('required', 'required');
+    ccInput.placeholder = 'Obrigatório';
+    ccInput.style.borderColor = 'var(--blue)';
+  } else {
+    ccInput.removeAttribute('required');
+    ccInput.placeholder = '—';
+    ccInput.style.borderColor = '';
+  }
+}
+
+function parseValor(str) {
+  if (!str) return 0;
+  return parseFloat(str.replace(/\./g, '').replace(',', '.')) || 0;
+}
+
+function formatBR(n) {
+  return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function recalcular() {
+  let totalD = 0, totalC = 0;
+  document.querySelectorAll('.partida-row').forEach(tr => {
+    const tipo  = tr.querySelector('.partida-tipo').value;
+    const valor = parseValor(tr.querySelector('.partida-valor').value);
+    if (tipo === 'D') totalD += valor;
+    else              totalC += valor;
+  });
+
+  document.getElementById('total-d').textContent = formatBR(totalD);
+  document.getElementById('total-c').textContent = formatBR(totalC);
+
+  const badge = document.getElementById('status-equilibrio');
+  const ok = totalD > 0 && Math.abs(totalD - totalC) < 0.005;
+  badge.textContent = ok ? '✓ Equilibrado' : (totalD === 0 && totalC === 0 ? '—' : '✗ Desequilibrado');
+  badge.className   = 'badge ' + (ok ? 'ok' : (totalD === 0 && totalC === 0 ? '' : 'erro'));
+
+  const msgEl = document.getElementById('msg-partidas');
+  if (!ok && totalD !== totalC && totalD > 0) {
+    const diff = Math.abs(totalD - totalC);
+    msgEl.textContent = `Diferença: R$ ${formatBR(diff)}`;
+    msgEl.style.color = 'var(--red, #ef4444)';
+  } else {
+    msgEl.textContent = 'Mínimo 2 partidas. Débitos = Créditos.';
+    msgEl.style.color = '';
+  }
+}
+
+// Bloqueia submit se desequilibrado
+document.getElementById('form-lancamento').addEventListener('submit', function(e) {
+  const rows = document.querySelectorAll('.partida-row');
+  if (rows.length < 2) {
+    e.preventDefault();
+    alert('Adicione no mínimo 2 partidas antes de salvar.');
+    return;
+  }
+  recalcular();
+  const badge = document.getElementById('status-equilibrio');
+  if (!badge.classList.contains('ok')) {
+    e.preventDefault();
+    alert('O lançamento está desequilibrado. Débitos devem ser iguais a Créditos.');
+  }
+});
+
+// Inicialização: pré-preenche partidas (estorno) ou 2 linhas em branco
+const PARTIDAS_INICIAIS = {{ partidas_iniciais|default:"[]" }};
+if (PARTIDAS_INICIAIS.length >= 2) {
+  PARTIDAS_INICIAIS.forEach(p => adicionarPartida(p.conta_id, p.tipo, p.valor, p.historico, p.centro_custo));
+} else {
+  adicionarPartida();
+  adicionarPartida();
+}
+</script>
+{% endblock %}

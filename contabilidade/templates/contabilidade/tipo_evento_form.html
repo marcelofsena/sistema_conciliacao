@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ titulo }} — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}
+  <a href="{% url 'tipos_evento' %}">Tipos de Evento</a> › {{ titulo }}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">⚡ {{ titulo }}</h1>
+    <p class="page-header__sub">
+      Eventos são ações operacionais (vendas, pagamentos, etc.) que disparam lançamentos automáticos.
+    </p>
+  </div>
+</div>
+
+<div style="max-width: 560px;">
+  <form method="POST" novalidate>
+    {% csrf_token %}
+
+    <div class="card mb-3">
+      <div class="card-header">
+        <span class="card-header__title">📋 Dados do Evento</span>
+      </div>
+      <div class="card-body">
+
+        <div class="form-group">
+          <label class="form-label">{{ form.codigo.label }} <span class="required">*</span></label>
+          {{ form.codigo }}
+          <div class="form-hint">Use MAIÚSCULAS com underline. Ex: VENDA_REALIZADA</div>
+          {% if form.codigo.errors %}
+            <div class="form-error">❌ {{ form.codigo.errors|join:", " }}</div>
+          {% endif %}
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">{{ form.descricao.label }} <span class="required">*</span></label>
+          {{ form.descricao }}
+          {% if form.descricao.errors %}
+            <div class="form-error">❌ {{ form.descricao.errors|join:", " }}</div>
+          {% endif %}
+        </div>
+
+        <div class="form-row form-row--2">
+          <div class="form-group">
+            <label class="form-label">{{ form.modulo_origem.label }} <span class="required">*</span></label>
+            {{ form.modulo_origem }}
+            <div class="form-hint">Ex: CAIXA, ESTOQUE, FINANCEIRO</div>
+          </div>
+          <div class="form-group" style="padding-top: 28px;">
+            <label class="form-check">
+              {{ form.ativo }}
+              <label>{{ form.ativo.label }}</label>
+            </label>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn--primary btn--lg">💾 {{ acao }}</button>
+      <a href="{% url 'tipos_evento' %}" class="btn btn--outline btn--lg">Cancelar</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

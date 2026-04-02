@@ -1,0 +1,177 @@
+{% extends 'base.html' %}
+
+{% block title %}Gerar DRE — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}
+  <a href="{% url 'relatorios_contabeis' %}">Relatórios</a>
+  › DRE
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">📊 Demonstração do Resultado do Exercício (DRE)</h1>
+    <p class="page-header__sub">
+      Visualize receitas, despesas e resultado líquido do período.
+    </p>
+  </div>
+</div>
+
+<div style="max-width: 900px;">
+  <!-- Seletores de Loja e Período -->
+  <div class="card mb-3">
+    <div class="card-body">
+      <form method="GET" id="form-dre" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: flex-end;">
+        <!-- Loja -->
+        <div>
+          <label class="form-label">Loja <span class="required">*</span></label>
+        </div>
+
+        <!-- Período -->
+        <div>
+          <label class="form-label">Período <span class="required">*</span></label>
+          <select name="periodo" class="form-control" required onchange="document.getElementById('form-dre').submit()">
+            <option value="">— Selecione o período —</option>
+            {% for p in periodos %}
+              <option value="{{ p.pk }}" {% if periodo and periodo.pk == p.pk %}selected{% endif %}>
+                {{ p.mes|stringformat:"02d" }}/{{ p.ano }} - {{ p.get_status_display }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {% if dre_data %}
+    <!-- DRE Report -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-header__title">📋 DRE — {{ dre_data.periodo }}</span>
+      </div>
+      <div class="card-body">
+        <div style="overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr style="border-bottom: 2px solid var(--border-color);">
+                <th style="padding: 12px; text-align: left; font-weight: 600; color: var(--text-muted);">Conta</th>
+                <th style="padding: 12px; text-align: right; font-weight: 600; color: var(--text-muted);">Valor</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- RECEITAS -->
+              <tr style="border-bottom: 1px solid var(--border-color); background: #f0f9ff;">
+                <td colspan="2" style="padding: 12px; font-weight: 600; color: #0369a1;">
+                  📈 RECEITAS
+                </td>
+              </tr>
+
+              {% for receita in dre_data.receitas %}
+                <tr style="border-bottom: 1px solid var(--border-color);">
+                  <td style="padding: 12px; padding-left: 24px;">
+                    <strong>{{ receita.conta.codigo_reduzido }}</strong><br>
+                    <span style="font-size: 12px; color: var(--text-muted);">{{ receita.conta.nome }}</span>
+                  </td>
+                  <td style="padding: 12px; text-align: right; font-weight: 500;">
+                    R$ {{ receita.saldo|floatformat:2 }}
+                  </td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="2" style="padding: 12px; color: var(--text-muted); font-size: 13px;">
+                    Nenhuma receita registrada
+                  </td>
+                </tr>
+              {% endfor %}
+
+              <tr style="border-bottom: 2px solid var(--border-color); background: var(--surface-alt);">
+                <td style="padding: 12px; font-weight: 600;">Total de Receitas</td>
+                <td style="padding: 12px; text-align: right; font-weight: 600;">
+                  R$ {{ dre_data.total_receitas|floatformat:2 }}
+                </td>
+              </tr>
+
+              <!-- DESPESAS -->
+              <tr style="border-bottom: 1px solid var(--border-color); background: #fef2f2;">
+                <td colspan="2" style="padding: 12px; font-weight: 600; color: #dc2626;">
+                  📉 DESPESAS
+                </td>
+              </tr>
+
+              {% for despesa in dre_data.despesas %}
+                <tr style="border-bottom: 1px solid var(--border-color);">
+                  <td style="padding: 12px; padding-left: 24px;">
+                    <strong>{{ despesa.conta.codigo_reduzido }}</strong><br>
+                    <span style="font-size: 12px; color: var(--text-muted);">{{ despesa.conta.nome }}</span>
+                  </td>
+                  <td style="padding: 12px; text-align: right; font-weight: 500;">
+                    R$ {{ despesa.saldo|floatformat:2 }}
+                  </td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="2" style="padding: 12px; color: var(--text-muted); font-size: 13px;">
+                    Nenhuma despesa registrada
+                  </td>
+                </tr>
+              {% endfor %}
+
+              <tr style="border-bottom: 2px solid var(--border-color); background: var(--surface-alt);">
+                <td style="padding: 12px; font-weight: 600;">Total de Despesas</td>
+                <td style="padding: 12px; text-align: right; font-weight: 600;">
+                  R$ {{ dre_data.total_despesas|floatformat:2 }}
+                </td>
+              </tr>
+
+              <!-- RESULTADO -->
+              <tr style="border-bottom: none; {% if dre_data.resultado >= 0 %}background: #dcfce7;{% else %}background: #fee2e2;{% endif %}">
+                <td style="padding: 16px; font-weight: 600; font-size: 16px;">
+                  {% if dre_data.resultado >= 0 %}
+                    ✓ LUCRO LÍQUIDO
+                  {% else %}
+                    ✗ PREJUÍZO
+                  {% endif %}
+                </td>
+                <td style="padding: 16px; text-align: right; font-weight: 600; font-size: 16px; {% if dre_data.resultado >= 0 %}color: #15803d;{% else %}color: #991b1b;{% endif %}">
+                  R$ {{ dre_data.resultado|floatformat:2 }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Resumo -->
+        <div style="margin-top: 24px; padding: 16px; background: var(--surface-alt); border-radius: 4px;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
+            <div>
+              <div style="font-size: 12px; color: var(--text-muted);">Total Receitas</div>
+              <div style="font-size: 18px; font-weight: 600; color: #0369a1;">R$ {{ dre_data.total_receitas|floatformat:2 }}</div>
+            </div>
+            <div>
+              <div style="font-size: 12px; color: var(--text-muted);">Total Despesas</div>
+              <div style="font-size: 18px; font-weight: 600; color: #dc2626;">R$ {{ dre_data.total_despesas|floatformat:2 }}</div>
+            </div>
+            <div>
+              <div style="font-size: 12px; color: var(--text-muted);">Resultado Líquido</div>
+              <div style="font-size: 18px; font-weight: 600; {% if dre_data.resultado >= 0 %}color: #15803d;{% else %}color: #991b1b;{% endif %}">
+                R$ {{ dre_data.resultado|floatformat:2 }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  {% elif loja and not periodo %}
+    <div class="empty-state" style="padding-top: 60px;">
+      <div class="empty-state__icon">📋</div>
+      <div class="empty-state__title">Selecione um período</div>
+      <div class="empty-state__desc">Escolha o período contábil para gerar o DRE.</div>
+    </div>
+  {% elif not loja %}
+    <div class="empty-state" style="padding-top: 80px;">
+      <div class="empty-state__icon">🏪</div>
+      <div class="empty-state__title">Selecione uma loja</div>
+      <div class="empty-state__desc">Use o seletor acima para começar.</div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

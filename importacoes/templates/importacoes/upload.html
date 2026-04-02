@@ -1,27 +1,60 @@
-{% extends 'importacoes/base.html' %}
+{% extends 'base.html' %}
+
+{% block title %}Importar Arquivos — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}Importar Arquivos{% endblock %}
 
 {% block content %}
-    <h2 style="color: #2c3e50; border-bottom: 2px solid #ecf0f1; padding-bottom: 10px;">📤 Importar Arquivos</h2>
-    <p>Selecione o sistema e faça o upload da planilha correspondente.</p>
-    
-    {% if messages %}
-        <ul style="list-style: none; padding: 0;">
-            {% for message in messages %}
-                <li style="padding: 12px; margin-bottom: 15px; border-radius: 4px; font-weight: bold;
-                    {% if message.tags == 'success' %}background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb;
-                    {% elif message.tags == 'error' %}background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb;
-                    {% else %}background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb;{% endif %}">
-                    {{ message }}
-                </li>
-            {% endfor %}
-        </ul>
-    {% endif %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">📥 Importar Arquivos</h1>
+    <p class="page-header__sub">Selecione o sistema de origem e faça o upload da planilha correspondente.</p>
+  </div>
+</div>
 
-    <form method="POST" enctype="multipart/form-data" style="margin-top: 20px; background: #f8f9fa; padding: 25px; border-radius: 8px; border: 1px solid #e0e0e0; max-width: 500px;">
+<div style="max-width: 580px;">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-header__title">📂 Upload de planilha</span>
+    </div>
+    <div class="card-body">
+      <form method="POST" enctype="multipart/form-data" id="upload-form">
         {% csrf_token %}
-        <div style="margin-bottom: 15px;">
-            {{ form.as_p }}
+
+        <div class="form-group">
+          <label class="form-label">Sistema de origem <span class="required">*</span></label>
+          <select name="tipo_arquivo" class="form-control" required>
+            {% for value, label in form.tipo_arquivo.field.choices %}
+              <option value="{{ value }}" {% if form.tipo_arquivo.value == value %}selected{% endif %}>
+                {{ label }}
+              </option>
+            {% endfor %}
+          </select>
         </div>
-        <button type="submit" class="btn-primary btn-success" style="width: 100%; margin-top: 10px;">⏳ Iniciar Importação</button>
-    </form>
+
+        <div class="form-group">
+          <label class="form-label">Arquivo <span class="required">*</span></label>
+          <div class="file-drop" id="file-drop">
+            <div class="file-drop__icon">📄</div>
+            <div class="file-drop__title">Arraste o arquivo aqui ou clique para selecionar</div>
+            <div class="file-drop__sub">CSV ou Excel (.xlsx)</div>
+            <input type="file" name="arquivo" class="file-drop__input" id="arquivo-input"
+                   accept=".csv,.xlsx,.xls" required>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn--success btn--block btn--lg">
+          ⏳ Iniciar Importação
+        </button>
+      </form>
+    </div>
+
+    <div class="card-footer">
+      <p class="text-sm text-muted">
+        💡 <strong>Dica:</strong> após importar, acesse
+        <a href="{% url 'formas_pagamento' %}">Formas de Pagamento</a>
+        para sincronizar novas entradas.
+      </p>
+    </div>
+  </div>
+</div>
 {% endblock %}

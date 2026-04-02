@@ -1,0 +1,165 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ titulo }} — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}
+  <a href="{% url 'plano_contas' %}{% if loja %}{% endif %}">Plano de Contas</a>
+  › {{ titulo }}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">📒 {{ titulo }}</h1>
+    <p class="page-header__sub">
+      Contas sintéticas formam a árvore hierárquica do plano de contas.
+      {% if loja %}<strong>Loja: {{ loja.descricao }}</strong>{% endif %}
+    </p>
+    {% if pai %}
+    <div style="margin-top: 1rem;">
+      <div class="badge badge--info">
+        Criando subconta para: <strong>{{ pai.codigo_classificacao }} - {{ pai.nome }}</strong>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div style="max-width: 560px;">
+  <form method="POST" novalidate>
+    {% csrf_token %}
+    {{ form.loja }}
+
+    <div class="card mb-3">
+      <div class="card-header">
+        <span class="card-header__title">📋 Dados da conta sintética</span>
+      </div>
+      <div class="card-body">
+
+        <div class="form-row form-row--2">
+          <div class="form-group">
+            <label class="form-label">
+              {{ form.codigo_classificacao.label }} <span class="required">*</span>
+              {% if pai %}<span class="form-hint-auto">🤖 Automático</span>{% endif %}
+            </label>
+            {{ form.codigo_classificacao }}
+            {% if pai %}
+              <div class="form-hint" style="background: #e8f5e9; padding: 8px; border-radius: 4px; margin-top: 6px; color: #2e7d32;">
+                ✓ <strong>Preenchido automaticamente:</strong> <code style="background: #fff; padding: 2px 4px; border-radius: 2px;">{{ form.codigo_classificacao.value }}</code>
+                {% if pai.nivel == 3 %}
+                <br><small style="color: #1b5e20;">Formato nível 4: 2 dígitos zero-padded (ex: .01, .02)</small>
+                {% endif %}
+              </div>
+            {% else %}
+              <div class="form-hint">
+                Numeração hierárquica:
+                <br><small>Nível 1-3: 1, 1.1, 1.1.1 (simples)</small>
+                <br><small>Nível 4: 1.1.1.02 (2 dígitos zero-padded)</small>
+              </div>
+            {% endif %}
+            {% if form.codigo_classificacao.errors %}
+              <div class="form-error">❌ {{ form.codigo_classificacao.errors|join:", " }}</div>
+            {% endif %}
+          </div>
+          <div class="form-group">
+            <label class="form-label">
+              {{ form.nivel.label }} <span class="required">*</span>
+              {% if pai %}<span class="form-hint-auto">🤖 Automático</span>{% endif %}
+            </label>
+            {{ form.nivel }}
+            {% if pai %}
+              <div class="form-hint" style="color: #2e7d32;">✓ Calculado: {{ pai.nivel }} (pai) + 1</div>
+            {% else %}
+              <div class="form-hint">1 = raiz, 2 = filho, 3 = neto…</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">{{ form.nome.label }} <span class="required">*</span></label>
+          {{ form.nome }}
+          {% if form.nome.errors %}
+            <div class="form-error">❌ {{ form.nome.errors|join:", " }}</div>
+          {% endif %}
+        </div>
+
+        <div class="form-row form-row--2">
+          <div class="form-group">
+            <label class="form-label">
+              {{ form.tipo_conta.label }} <span class="required">*</span>
+              {% if pai %}<span class="form-hint-auto">🤖 Automático</span>{% endif %}
+            </label>
+            {{ form.tipo_conta }}
+            {% if pai %}
+              <input type="hidden" name="tipo_conta" value="{{ pai.tipo_conta.codigo }}">
+              <div class="form-hint" style="color: #2e7d32;">✓ Herdado do pai: {{ pai.tipo_conta.descricao }}</div>
+            {% endif %}
+          </div>
+          <div class="form-group">
+            <label class="form-label">
+              {{ form.conta_pai.label }}
+              {% if pai %}<span class="form-hint-auto">🤖 Automático</span>{% endif %}
+            </label>
+            {{ form.conta_pai }}
+            {% if pai %}
+              <input type="hidden" name="conta_pai" value="{{ pai.pk }}">
+              <div class="form-hint" style="color: #2e7d32;">✓ Selecionado: {{ pai.codigo_classificacao }} - {{ pai.nome }}</div>
+            {% else %}
+              <div class="form-hint">Deixe vazio se for conta raiz.</div>
+            {% endif %}
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn--primary btn--lg">💾 {{ acao }}</button>
+      <a href="{% url 'plano_contas' %}{% if loja %}{% endif %}"
+         class="btn btn--outline btn--lg">Cancelar</a>
+    </div>
+  </form>
+</div>
+
+{% block extra_css %}
+<style>
+.badge--info {
+  display: inline-block;
+  background: #e3f2fd;
+  color: #1976d2;
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.875rem;
+}
+
+/* Estilos para campos desabilitados/readonly */
+.readonly {
+  background-color: #f5f5f5 !important;
+  color: #666 !important;
+  cursor: not-allowed !important;
+  opacity: 0.7;
+}
+
+input[readonly],
+input:disabled,
+select[disabled] {
+  background-color: #f5f5f5;
+  color: #666;
+  cursor: not-allowed;
+  opacity: 0.8;
+  border-color: #ddd !important;
+}
+
+/* Label para campos automáticos */
+.form-hint-auto {
+  display: inline-block;
+  background: #e8f5e9;
+  color: #2e7d32;
+  padding: 0.25rem 0.5rem;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-left: 0.5rem;
+}
+</style>
+{% endblock %}
+{% endblock %}

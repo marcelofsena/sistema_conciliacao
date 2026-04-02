@@ -1,62 +1,181 @@
-import sqlite3
+"""
+Importações - Views de upload de arquivos e sincronização de pagamentos.
+
+Responsabilidades:
+- Upload e processamento de CSVs (SWFast, Stone) e Excel (iFood)
+- Sincronização automática de formas de pagamento (Normalizador)
+"""
+
 import pandas as pd
 import re
 import unidecode
-import io
-from django.http import HttpResponse
-from datetime import datetime
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
-from django.db import connection
-from .forms import UploadArquivoForm
-from .models import VendaSWFast, TransacaoStone, PedidoIFood, Empresa, FormaPagamento
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
-from openpyxl.styles import PatternFill
+from datetime import datetime
+
+from .forms import UploadArquivoForm
+from .models import VendaSWFast, TransacaoStone, PedidoIFood, FormaPagamento
+from core.models import Empresa
+
 
 @login_required(login_url='login')
 def home(request):
-    return render(request, 'importacoes/index.html')
+    from core.models import Empresa
+    from .models import VendaSWFast, PedidoIFood, FormaPagamento
+    from contabilidade.models import LancamentoContabil, PeriodoContabil, EventoOperacional
+    from financeiro.models import ContaReceber, ContaPagar
+    from django.db.models import Sum
+    from decimal import Decimal
+    import datetime
+
+    hoje = datetime.date.today()
+
+    # ── Filtro de acesso multi-loja ──────────────────────
+    lojas_user = request.user.perfil.get_lojas()
+
+    # ── Operacional ──────────────────────────────────────
+    total_lojas  = lojas_user.count()
+    total_vendas = VendaSWFast.objects.filter(loja__in=lojas_user).count() if lojas_user.exists() else 0
+    # PedidoIFood usa id_restaurante (ncad_ifood), não codigo_loja
+    codigos_ifood = list(
+        lojas_user.values_list('ncad_ifood', flat=True)
+        .filter(ncad_ifood__gt=0)
+    )
+    codigos_ifood_str = [str(c) for c in codigos_ifood]
+    total_pedidos = PedidoIFood.objects.filter(id_restaurante__in=codigos_ifood_str).count() if codigos_ifood_str else 0
+    formas_sem_config = (
+        FormaPagamento.objects.filter(loja__in=lojas_user, especific_form_pgto__isnull=True).count()
+        + FormaPagamento.objects.filter(loja__in=lojas_user, especific_form_pgto='').count()
+    ) if lojas_user.exists() else 0
+
+    # ── Contabilidade ─────────────────────────────────────
+    if lojas_user.exists():
+        periodos_abertos  = PeriodoContabil.objects.filter(status__in=['ABERTO', 'REABERTO'], loja__in=lojas_user).count()
+        lancamentos_mes   = LancamentoContabil.objects.filter(
+            data_lancamento__year=hoje.year,
+            data_lancamento__month=hoje.month,
+            loja__in=lojas_user
+        ).count()
+        eventos_pendentes = EventoOperacional.objects.filter(status='PENDENTE', loja__in=lojas_user).count()
+        eventos_erro      = EventoOperacional.objects.filter(status='ERRO', loja__in=lojas_user).count()
+    else:
+        periodos_abertos = lancamentos_mes = eventos_pendentes = eventos_erro = 0
+
+    # ── Financeiro ────────────────────────────────────────
+    if lojas_user.exists():
+        cr_aberto = (
+            ContaReceber.objects
+            .filter(status__in=['ABERTO', 'PARCIAL'], loja__in=lojas_user)
+            .aggregate(s=Sum('saldo'))['s'] or Decimal('0')
+        )
+        cp_aberto = (
+            ContaPagar.objects
+            .filter(status__in=['ABERTO', 'PARCIAL'], loja__in=lojas_user)
+            .aggregate(s=Sum('saldo'))['s'] or Decimal('0')
+        )
+        cr_vencido = ContaReceber.objects.filter(
+            status__in=['ABERTO', 'PARCIAL'], data_vencimento__lt=hoje, loja__in=lojas_user
+        ).count()
+        cp_vencido = ContaPagar.objects.filter(
+            status__in=['ABERTO', 'PARCIAL'], data_vencimento__lt=hoje, loja__in=lojas_user
+        ).count()
+    else:
+        cr_aberto = cp_aberto = Decimal('0')
+        cr_vencido = cp_vencido = 0
+
+    # ── Alertas ───────────────────────────────────────────
+    alertas = []
+    if formas_sem_config:
+        alertas.append({
+            'tipo': 'warning',
+            'msg': f'{formas_sem_config} forma(s) de pagamento sem configuração.',
+            'link': 'formas_pagamento', 'link_label': 'Configurar →'
+        })
+    if eventos_erro:
+        alertas.append({
+            'tipo': 'error',
+            'msg': f'{eventos_erro} evento(s) operacional(ais) com erro de contabilização.',
+            'link': 'eventos_operacionais', 'link_label': 'Ver eventos →'
+        })
+    if cr_vencido:
+        alertas.append({
+            'tipo': 'warning',
+            'msg': f'{cr_vencido} título(s) a receber vencido(s).',
+            'link': 'contas_receber', 'link_label': 'Ver contas →'
+        })
+    if cp_vencido:
+        alertas.append({
+            'tipo': 'error',
+            'msg': f'{cp_vencido} título(s) a pagar vencido(s).',
+            'link': 'contas_pagar', 'link_label': 'Ver contas →'
+        })
+
+    context = {
+        # operacional
+        'total_lojas':       total_lojas,
+        'total_vendas':      total_vendas,
+        'total_pedidos':     total_pedidos,
+        'formas_sem_config': formas_sem_config,
+        # contabilidade
+        'periodos_abertos':  periodos_abertos,
+        'lancamentos_mes':   lancamentos_mes,
+        'eventos_pendentes': eventos_pendentes,
+        'eventos_erro':      eventos_erro,
+        # financeiro
+        'cr_aberto':         cr_aberto,
+        'cp_aberto':         cp_aberto,
+        'cr_vencido':        cr_vencido,
+        'cp_vencido':        cp_vencido,
+        # alertas
+        'alertas':           alertas,
+        'hoje':              hoje,
+    }
+    return render(request, 'importacoes/index.html', context)
 
 
 # ==========================================
-# 🛡️ FUNÇÕES AUXILIARES DE LIMPEZA (BLINDADAS)
+# FUNÇÕES AUXILIARES DE LIMPEZA
 # ==========================================
 
 def limpar_valor(valor):
-    """Converte valores monetários do Excel (com ponto ou vírgula) para float perfeito."""
+    """Converte valores monetários do Excel (com ponto ou vírgula) para float."""
     if pd.isna(valor) or valor == '':
         return 0.0
     if isinstance(valor, (int, float)):
         return float(valor)
-    
+
     valor_str = str(valor).strip()
-    # Verifica se já é padrão americano (ex: 1250.50)
     if '.' in valor_str and ',' not in valor_str:
-        try: return float(valor_str)
-        except: pass
-        
-    # Padrão Brasileiro (ex: 1.250,50)
-    valor_str = valor_str.replace('.', '')    # Tira o ponto de milhar
-    valor_str = valor_str.replace(',', '.')   # Troca a vírgula por ponto decimal
-    valor_str = re.sub(r"[^\d.-]", "", valor_str) # Tira R$ e espaços
+        try:
+            return float(valor_str)
+        except ValueError:
+            pass
+
+    valor_str = valor_str.replace('.', '')
+    valor_str = valor_str.replace(',', '.')
+    valor_str = re.sub(r"[^\d.-]", "", valor_str)
     try:
         return float(valor_str)
-    except:
+    except ValueError:
         return 0.0
+
 
 def limpar_numero(valor):
     """Garante que IDs sejam apenas números, removendo '.0' do Pandas."""
-    if pd.isna(valor): 
+    if pd.isna(valor):
         return ""
     val_str = str(valor).strip()
     if val_str.endswith('.0'):
         val_str = val_str[:-2]
     return re.sub(r"\D", "", val_str)
 
+
 # ==========================================
-# 📤 VIEW DE UPLOAD DE ARQUIVOS
+# VIEW DE UPLOAD DE ARQUIVOS
 # ==========================================
+
 @login_required(login_url='login')
 def pagina_upload(request):
     if request.method == 'POST':
@@ -64,7 +183,7 @@ def pagina_upload(request):
         if form.is_valid():
             tipo = form.cleaned_data['tipo_arquivo']
             arquivo = request.FILES['arquivo']
-            
+
             try:
                 # ----------------------------------------------------
                 # 1. SWFAST (VENDAS)
@@ -78,31 +197,36 @@ def pagina_upload(request):
 
                     col_venda = "Venda" if "Venda" in df.columns else "IdPedidoExterno"
                     df["ChaveComposta"] = (
-                        df["FormaPagamento"].astype(str) + "-" + 
-                        df[col_venda].astype(str) + "-" + 
+                        df["FormaPagamento"].astype(str) + "-" +
+                        df[col_venda].astype(str) + "-" +
                         df["ValorPagamento"].astype(str) + "-" +
                         df["DataHoraTransacao"].astype(str)
                     )
 
-                    campos_agrupamento = ["FormaPagamento", "Aplicativo", "Operador", "DataHoraTransacao", 
+                    campos_agrupamento = ["FormaPagamento", "Aplicativo", "Operador", "DataHoraTransacao",
                                           "IdPedidoExterno", "CodigoLoja", "ChaveComposta", "NrAbertura"]
-                    if "Venda" in df.columns: campos_agrupamento.append("Venda")
-                        
+                    if "Venda" in df.columns:
+                        campos_agrupamento.append("Venda")
+
                     df = df.groupby(campos_agrupamento, dropna=False, as_index=False).agg({"ValorPagamento": "sum"})
 
                     contador = 0
                     for _, row in df.iterrows():
-                        # Evita erros de valores vazios/NaN
                         app = str(row.get('Aplicativo', '')).strip()
                         id_ext = str(row.get('IdPedidoExterno', '')).strip()
                         venda = str(row.get('Venda', '')).strip() if 'Venda' in df.columns else id_ext
                         forma_pgto = str(row.get('FormaPagamento', '')).strip()
                         operador = str(row.get('Operador', '')).strip()
-                        
+
+                        # Busca a Empresa pelo codigo_loja (ncad_swfast)
+                        codigo_loja = row['CodigoLoja']
+                        empresa = Empresa.objects.filter(ncad_swfast=codigo_loja).first()
+
                         VendaSWFast.objects.update_or_create(
                             chave_composta=row['ChaveComposta'],
                             defaults={
-                                'codigo_loja': row['CodigoLoja'],
+                                'loja': empresa,
+                                'codigo_loja': codigo_loja,
                                 'nr_abertura': row['NrAbertura'],
                                 'forma_pagamento': forma_pgto if forma_pgto.lower() != 'nan' else '',
                                 'aplicativo': app if app.lower() != 'nan' else '',
@@ -124,9 +248,9 @@ def pagina_upload(request):
                     df_csv.sort_values(by=['CodigoLoja', 'NrAbertura'], ascending=False, inplace=True)
                     df_csv.reset_index(drop=True, inplace=True)
 
-                    for i in range(len(df_csv)-1):
-                        if df_csv.loc[i, 'CodigoLoja'] == df_csv.loc[i+1, 'CodigoLoja']:
-                            fechamento_anterior = df_csv.loc[i+1, 'DataHoraFechamento']
+                    for i in range(len(df_csv) - 1):
+                        if df_csv.loc[i, 'CodigoLoja'] == df_csv.loc[i + 1, 'CodigoLoja']:
+                            fechamento_anterior = df_csv.loc[i + 1, 'DataHoraFechamento']
                             if pd.notna(fechamento_anterior):
                                 df_csv.loc[i, 'DataHoraAbertura'] = fechamento_anterior + pd.Timedelta(seconds=30)
 
@@ -145,16 +269,22 @@ def pagina_upload(request):
                         dt_abert = row['DataHoraAbertura'] if pd.notna(row['DataHoraAbertura']) else None
                         dt_fech = row['DataHoraFechamento'] if pd.notna(row['DataHoraFechamento']) else None
 
+                        # Busca a Empresa pelo codigo_loja (ncad_swfast)
+                        empresa = Empresa.objects.filter(ncad_swfast=cod_loja).first()
+
                         chave_turno = f"TURNO-{cod_loja}-{nr_abert}"
                         VendaSWFast.objects.update_or_create(
                             chave_composta=chave_turno,
                             defaults={
+                                'loja': empresa,
                                 'codigo_loja': cod_loja, 'nr_abertura': nr_abert,
                                 'dthr_abert_cx': dt_abert, 'dthr_encerr_cx': dt_fech,
                                 'forma_pagamento': 'ABERTURA_CAIXA', 'venda': 'INFO_TURNO', 'valor_pagamento': 0.0,
                             }
                         )
-                        VendaSWFast.objects.filter(codigo_loja=cod_loja, nr_abertura=nr_abert).exclude(chave_composta=chave_turno).update(
+                        VendaSWFast.objects.filter(
+                            codigo_loja=cod_loja, nr_abertura=nr_abert
+                        ).exclude(chave_composta=chave_turno).update(
                             dthr_abert_cx=dt_abert, dthr_encerr_cx=dt_fech
                         )
                         contador += 1
@@ -166,14 +296,19 @@ def pagina_upload(request):
                 elif tipo == 'stone':
                     df = pd.read_csv(arquivo, delimiter=",")
                     df.columns = [unidecode.unidecode(col).strip().upper().replace(" ", "_") for col in df.columns]
-                    df.rename(columns={"N_DE_PARCELAS": "QTD_DE_PARCELAS", "VALOR_LIQUIDO": "VALOR_LÍQUIDO", "DESCONTO_DE_ANTECIPACAO": "DESCONTO_DE_ANTECIPAÇÃO"}, inplace=True)
+                    df.rename(columns={
+                        "N_DE_PARCELAS": "QTD_DE_PARCELAS",
+                        "VALOR_LIQUIDO": "VALOR_LÍQUIDO",
+                        "DESCONTO_DE_ANTECIPACAO": "DESCONTO_DE_ANTECIPAÇÃO"
+                    }, inplace=True)
                     df["DATA_DA_VENDA"] = pd.to_datetime(df.get("DATA_DA_VENDA"), dayfirst=True, errors="coerce")
 
                     contador = 0
                     for _, row in df.iterrows():
                         stone_id = str(row.get('STONE_ID', ''))
-                        if stone_id == 'nan' or stone_id == '': continue
-                        
+                        if stone_id == 'nan' or stone_id == '':
+                            continue
+
                         data_venda = row['DATA_DA_VENDA'] if pd.notna(row['DATA_DA_VENDA']) else None
                         TransacaoStone.objects.update_or_create(
                             stone_id=stone_id,
@@ -199,13 +334,19 @@ def pagina_upload(request):
                 elif tipo == 'ifood':
                     df = pd.read_excel(arquivo)
                     mapeamento = {
-                        "ID COMPLETO DO PEDIDO": "ID DO PEDIDO", "ID CURTO DO PEDIDO": "N° PEDIDO",
-                        "DATA E HORA DO PEDIDO": "DATA", "NOME DA LOJA": "RESTAURANTE", "ID DA LOJA": "ID DO RESTAURANTE",
-                        "TAXA DE ENTREGA PAGA PELO CLIENTE (R$)": "TAXA DE ENTREGA", "VALOR DOS ITENS (R$)": "VALOR DOS ITENS",
+                        "ID COMPLETO DO PEDIDO": "ID DO PEDIDO",
+                        "ID CURTO DO PEDIDO": "N° PEDIDO",
+                        "DATA E HORA DO PEDIDO": "DATA",
+                        "NOME DA LOJA": "RESTAURANTE",
+                        "ID DA LOJA": "ID DO RESTAURANTE",
+                        "TAXA DE ENTREGA PAGA PELO CLIENTE (R$)": "TAXA DE ENTREGA",
+                        "VALOR DOS ITENS (R$)": "VALOR DOS ITENS",
                         "INCENTIVO PROMOCIONAL DO IFOOD (R$)": "INCENTIVO PROMOCIONAL DO IFOOD",
                         "INCENTIVO PROMOCIONAL DA LOJA (R$)": "INCENTIVO PROMOCIONAL DA LOJA",
-                        "TAXA DE SERVIÇO (R$)": "TAXA DE SERVIÇO", "VALOR LIQUIDO (R$)": "TOTAL DO PARCEIRO", 
-                        "TOTAL PAGO PELO CLIENTE (R$)": "TOTAL DO PEDIDO", "FORMA DE PAGAMENTO": "FORMAS DE PAGAMENTO"
+                        "TAXA DE SERVIÇO (R$)": "TAXA DE SERVIÇO",
+                        "VALOR LIQUIDO (R$)": "TOTAL DO PARCEIRO",
+                        "TOTAL PAGO PELO CLIENTE (R$)": "TOTAL DO PEDIDO",
+                        "FORMA DE PAGAMENTO": "FORMAS DE PAGAMENTO"
                     }
                     df.rename(columns=mapeamento, inplace=True)
                     df["DATA"] = pd.to_datetime(df.get("DATA"), errors='coerce')
@@ -221,9 +362,6 @@ def pagina_upload(request):
                         taxa_entrega = limpar_valor(linha.get("TAXA DE ENTREGA", 0))
                         return (vlr_itens - incentivo_loja + taxa_entrega) if integrado == "Sim" else (vlr_itens - incentivo_loja)
 
-                    # ==========================================
-                    # BUSCA DINÂMICA PELA COLUNA DE STATUS
-                    # ==========================================
                     coluna_status = None
                     for col in df.columns:
                         if 'STATUS' in str(col).upper():
@@ -233,28 +371,20 @@ def pagina_upload(request):
                     contador = 0
                     for _, row in df.iterrows():
                         id_pedido = str(row.get('ID DO PEDIDO', '')).strip()
-                        if id_pedido == 'nan' or id_pedido == '': continue
-                            
+                        if id_pedido == 'nan' or id_pedido == '':
+                            continue
+
                         data_pedido = row['DATA'] if pd.notna(row['DATA']) else None
-                        
-                        # Tratamento seguro de strings para evitar "nan"
                         formas_pgto = row.get('FORMAS DE PAGAMENTO')
                         origem_canc = row.get('ORIGEM DO CANCELAMENTO')
 
-                        # ------------------------------------------
-                        # LÓGICA DO STATUS BLINDADA APLICADA AO IFOOD
-                        # ------------------------------------------
-                        status_pedido = 'CONCLUIDO' # Valor padrão seguro
-                        
+                        status_pedido = 'CONCLUIDO'
                         if coluna_status:
                             status_bruto = str(row.get(coluna_status, '')).strip().upper()
                             if status_bruto != 'NAN' and status_bruto != '':
                                 status_pedido = status_bruto
-                                
-                        # Se vier escrito "CANCELADA" ou "CANCELADO", padroniza tudo
                         if 'CANCELAD' in status_pedido:
                             status_pedido = 'CANCELADO'
-                        # ------------------------------------------
 
                         PedidoIFood.objects.update_or_create(
                             id_pedido=id_pedido,
@@ -269,8 +399,6 @@ def pagina_upload(request):
                                 'formas_pagamento': str(formas_pgto) if pd.notna(formas_pgto) else '',
                                 'incentivo_ifood': limpar_valor(row.get('INCENTIVO PROMOCIONAL DO IFOOD', 0)),
                                 'origem_cancelamento': str(origem_canc) if pd.notna(origem_canc) else '',
-                                
-                                # Salva o status rastreado
                                 'status_pedido': status_pedido,
                             }
                         )
@@ -283,15 +411,21 @@ def pagina_upload(request):
         form = UploadArquivoForm()
     return render(request, 'importacoes/upload.html', {'form': form})
 
+
 # ==========================================
-# 🔄 VIEW DE SINCRONIZAÇÃO DE PAGAMENTOS
+# SINCRONIZAÇÃO DE FORMAS DE PAGAMENTO
 # ==========================================
+
 @login_required(login_url='login')
 def sincronizar_formas_pagamento(request):
+    # ── Filtro de acesso multi-loja ──────────────────────
+    lojas_user = request.user.perfil.get_lojas()
+
     if request.method == 'POST':
         try:
-            # Pega todas as combinações reais que vieram das vendas importadas
-            combinacoes_swfast = VendaSWFast.objects.exclude(
+            combinacoes_swfast = VendaSWFast.objects.filter(
+                loja__in=lojas_user
+            ).exclude(
                 forma_pagamento__isnull=True
             ).exclude(
                 forma_pagamento=''
@@ -304,526 +438,70 @@ def sincronizar_formas_pagamento(request):
                 loja = str(combo.get('codigo_loja', '')).strip()
                 app = str(combo.get('aplicativo', '')).strip()
 
-                # 1. Verifica se ESSA exata combinação (Forma + Loja + App) já existe
+                # Get the Empresa object for this loja code
+                empresa_obj = Empresa.objects.filter(ncad_swfast=loja).first()
+                if not empresa_obj:
+                    continue
+
                 existe = FormaPagamento.objects.filter(
-                    forma_pagamento=forma,
-                    codigo_loja=loja,
-                    aplicativo=app
+                    forma_pagamento=forma, loja=empresa_obj, aplicativo=app
                 ).exists()
 
                 if not existe:
-                    # 2. PROCURA UMA "COLA" (uma configuração que você já preencheu antes para essa mesma forma, 
-                    # mesmo que seja de outra loja ou da época que a loja ficava em branco)
                     referencia = FormaPagamento.objects.filter(
-                        forma_pagamento=forma,
-                        aplicativo=app
+                        forma_pagamento=forma, aplicativo=app
                     ).exclude(especific_form_pgto='').first()
 
-                    # 3. Se achou, copia o grupo (ex: 'CARTAO'). Se não achou, deixa em branco para você preencher.
                     especificacao_herdada = referencia.especific_form_pgto if referencia else ''
 
-                    # Cria o registro novo já com a configuração copiada!
                     FormaPagamento.objects.create(
-                        forma_pagamento=forma,
-                        codigo_loja=loja,
-                        aplicativo=app,
-                        especific_form_pgto=especificacao_herdada
+                        forma_pagamento=forma, loja=empresa_obj,
+                        aplicativo=app, especific_form_pgto=especificacao_herdada
                     )
                     novas_insercoes += 1
 
             if novas_insercoes > 0:
-                messages.success(request, f"Sucesso! {novas_insercoes} configurações de loja sincronizadas automaticamente.")
+                messages.success(request, f"Sucesso! {novas_insercoes} configurações sincronizadas.")
             else:
-                messages.info(request, "Todas as formas de pagamento e lojas já estão perfeitamente sincronizadas.")
-                
+                messages.info(request, "Todas as formas de pagamento já estão sincronizadas.")
+
         except Exception as e:
             messages.error(request, f"Erro ao sincronizar: {e}")
-            
+
         return redirect('formas_pagamento')
 
-    # A ordenação aqui ajuda a agrupar visualmente por loja na tela
-    formas = FormaPagamento.objects.all().order_by('codigo_loja', 'forma_pagamento')
+    formas = FormaPagamento.objects.filter(loja__in=lojas_user).order_by('loja', 'forma_pagamento')
     return render(request, 'importacoes/formas_pagamento.html', {'formas': formas})
 
-# ==========================================
-# 📊 VIEW E LÓGICA DA CONFERÊNCIA
-# ==========================================
-DB_PATH = "db.sqlite3"
-
-def carregar_lojas(usuario):
-    """Carrega apenas as lojas que o usuário logado tem permissão para ver"""
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT DISTINCT codigo_loja FROM importacoes_vendaswfast WHERE codigo_loja IS NOT NULL ORDER BY codigo_loja")
-        lojas_importadas = [str(row[0]) for row in cursor.fetchall()]
-        conn.close()
-
-        # Se for um SuperUsuário (você) ou tiver perfil ADMIN, vê todas as lojas importadas
-        if usuario.is_superuser or (hasattr(usuario, 'perfil') and usuario.perfil.tipo_acesso == 'ADMIN'):
-            return lojas_importadas
-        
-        # Se for OPERADOR, cruza as lojas importadas com as que ele tem permissão
-        elif hasattr(usuario, 'perfil') and usuario.perfil.tipo_acesso == 'OPERADOR':
-            # Pega os IDs das lojas permitidas cadastradas na tabela Empresa
-            permitidas = [str(emp.ncad_swfast) for emp in usuario.perfil.lojas_permitidas.all()]
-            # Devolve apenas as lojas que estão importadas E que ele tem permissão
-            return [loja for loja in lojas_importadas if loja in permitidas]
-        
-        # Se não tiver perfil configurado, por segurança, não vê nenhuma
-        return []
-
-    except Exception as e:
-        print(f"Erro ao carregar lojas: {e}")
-        return []
-
-# ==========================================
-# CARREGAR ABERTURAS COM DATA E TURNO
-# ==========================================
-def carregar_aberturas(codigo_loja):
-    """Retorna uma lista de dicionários com o número do caixa, a data e o turno"""
-    if not codigo_loja:
-        return []
-
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        
-        # Busca o número do caixa e a hora da PRIMEIRA venda que ocorreu nele
-        cursor.execute("""
-            SELECT nr_abertura, MIN(data_hora_transacao) 
-            FROM importacoes_vendaswfast 
-            WHERE codigo_loja = ? AND nr_abertura IS NOT NULL AND nr_abertura != ''
-            GROUP BY nr_abertura
-            ORDER BY nr_abertura DESC
-        """, [codigo_loja])
-        
-        aberturas_formatadas = []
-        
-        for row in cursor.fetchall():
-            nr_abertura = str(row[0])
-            data_hora = row[1]
-            
-            # Texto padrão caso falhe ao ler a data
-            texto_exibicao = f"Caixa: {nr_abertura}"
-            
-            if data_hora:
-                try:
-                    # Converte a data do banco (ex: '2026-02-26 14:30:00')
-                    dt = datetime.strptime(data_hora, '%Y-%m-%d %H:%M:%S')
-                    data_br = dt.strftime('%d/%m/%Y')
-                    
-                    # Aplica a mesma regra de turno: 06h às 17h59 = Dia, o resto = Noite
-                    if 6 <= dt.hour < 18:
-                        turno = "Dia"
-                    else:
-                        turno = "Noite"
-                        
-                    texto_exibicao = f"Caixa: {nr_abertura} - {data_br} - {turno}"
-                except Exception:
-                    pass # Se a data vier vazia ou num formato estranho, mantém só o número
-            
-            # Guardamos o número real para o sistema usar, e o texto bonito para o usuário ver
-            aberturas_formatadas.append({
-                'numero': nr_abertura,
-                'rotulo': texto_exibicao
-            })
-            
-        conn.close()
-        return aberturas_formatadas
-        
-    except Exception as e:
-        print(f"Erro ao carregar aberturas: {e}")
-        return []
-
-def buscar_dados_conferencia(codigo_loja, nr_abertura, incluir_dinheiro=False):
-    conn = sqlite3.connect(DB_PATH)
-    
-    query = """
-        SELECT
-            fp.especific_form_pgto AS RESUMO,
-            SUM(sw.valor_pagamento) AS rel_swfast,
-
-            CASE
-                WHEN fp.especific_form_pgto = 'CARTAO' THEN COALESCE((
-                    SELECT SUM(c.valor_bruto) FROM importacoes_transacaostone c
-                    WHERE c.data_venda BETWEEN 
-                        (SELECT DATETIME(MIN(sw2.dthr_abert_cx), '+1 hour') FROM importacoes_vendaswfast sw2 WHERE sw2.codigo_loja = ? AND sw2.nr_abertura = ?)
-                        AND (SELECT DATETIME(MAX(sw3.dthr_encerr_cx), '+1 hour') FROM importacoes_vendaswfast sw3 WHERE sw3.codigo_loja = ? AND sw3.nr_abertura = ?)
-                    AND c.stonecode = emp.ncad_cartoes
-                ), 0) - COALESCE((
-                    SELECT SUM(i.total_pedido) FROM importacoes_pedidoifood i
-                    WHERE LOWER(TRIM(i.id_pedido)) IN (
-                        SELECT LOWER(TRIM(sw4.id_pedido_externo)) FROM importacoes_vendaswfast sw4
-                        WHERE LOWER(sw4.aplicativo) = 'ifood' AND sw4.codigo_loja = ? AND sw4.nr_abertura = ?
-                    ) AND i.id_restaurante = emp.ncad_ifood
-                ), 0)
-
-                WHEN fp.especific_form_pgto = 'PIX' THEN 0 /* PIX MERCADO PAGO */
-
-                WHEN fp.especific_form_pgto in ('IFOOD ONLINE') THEN COALESCE((
-                    SELECT SUM(i.vlr_pedido_sw) FROM importacoes_pedidoifood i
-                    WHERE i.id_restaurante = emp.ncad_ifood
-                      AND LOWER(TRIM(i.formas_pagamento)) NOT IN ('dinheiro')
-                      AND EXISTS (
-                          /* O EXISTS é muito mais rápido que o IN, ele para de procurar assim que acha o par */
-                          SELECT 1 FROM importacoes_vendaswfast sw5
-                          JOIN tbl_formapagamento fp3 
-                              ON LOWER(TRIM(sw5.forma_pagamento)) = LOWER(TRIM(fp3.forma_pagamento))
-                              AND sw5.codigo_loja = fp3.codigo_loja
-                              AND LOWER(TRIM(sw5.aplicativo)) = LOWER(TRIM(fp3.aplicativo))
-                          WHERE sw5.codigo_loja = ? AND sw5.nr_abertura = ?
-                            AND LOWER(sw5.aplicativo) = 'ifood'
-                            AND LOWER(TRIM(sw5.id_pedido_externo)) = LOWER(TRIM(i.id_pedido))
-                            AND fp3.especific_form_pgto = fp.especific_form_pgto
-                      )
-                ), 0)
-
-                WHEN fp.especific_form_pgto = 'DINHEIRO' THEN COALESCE((
-                    SELECT mov.valor_dinheiro_envelope FROM tbl_movcaixa mov WHERE mov.codigo_loja = ? AND mov.nr_abertura = ?
-                ), 0)
-                ELSE 0
-            END AS Rel_importados
-
-        FROM importacoes_vendaswfast sw
-        LEFT JOIN tbl_formapagamento fp 
-            ON LOWER(TRIM(sw.forma_pagamento)) = LOWER(TRIM(fp.forma_pagamento))
-            AND sw.codigo_loja = fp.codigo_loja
-            AND LOWER(TRIM(sw.aplicativo)) = LOWER(TRIM(fp.aplicativo))
-        LEFT JOIN tbl_empresa emp ON emp.ncad_swfast = sw.codigo_loja
-        WHERE sw.codigo_loja = ? AND sw.nr_abertura = ?
-    """
-    if not incluir_dinheiro: query += " AND UPPER(TRIM(sw.forma_pagamento)) != 'DINHEIRO'"
-    query += " GROUP BY fp.especific_form_pgto"
-
-    params = [codigo_loja, nr_abertura, codigo_loja, nr_abertura, codigo_loja, nr_abertura, codigo_loja, nr_abertura, codigo_loja, nr_abertura, codigo_loja, nr_abertura]
-
-    query_cancelados = """
-        SELECT i.nr_pedido, i.data, i.formas_pagamento, i.total_pedido FROM importacoes_pedidoifood i
-        WHERE LOWER(TRIM(i.id_pedido)) IN (
-            SELECT LOWER(TRIM(sw.id_pedido_externo)) FROM importacoes_vendaswfast sw
-            WHERE LOWER(sw.aplicativo) = 'ifood' AND sw.codigo_loja = ? AND sw.nr_abertura = ?
-        ) AND i.origem_cancelamento != ''
-    """
-
-    query_incentivo = """       
-        SELECT SUM(i.incentivo_ifood) FROM importacoes_pedidoifood i
-        WHERE LOWER(TRIM(i.id_pedido)) IN (
-            SELECT LOWER(TRIM(sw.id_pedido_externo)) FROM importacoes_vendaswfast sw
-            WHERE LOWER(sw.aplicativo) = 'ifood' AND sw.codigo_loja = ? AND sw.nr_abertura = ?
-        ) AND LOWER(TRIM(i.formas_pagamento)) = 'dinheiro'
-    """
-
-    try:
-        cursor = conn.cursor()
-        cursor.execute(query, params)
-        df = pd.DataFrame(cursor.fetchall(), columns=[col[0] for col in cursor.description])
-        
-        cursor.execute(query_cancelados, [codigo_loja, nr_abertura])
-        df_cancelados = pd.DataFrame(cursor.fetchall(), columns=[col[0] for col in cursor.description])
-        
-        cursor.execute(query_incentivo, [codigo_loja, nr_abertura])
-        res_incentivo = cursor.fetchone()
-        valor_incentivo = res_incentivo[0] if res_incentivo and res_incentivo[0] else 0.0
-    except Exception as e:
-        print(f"Erro SQL: {e}")
-        df, df_cancelados, valor_incentivo = pd.DataFrame(), pd.DataFrame(), 0.0
-    finally:
-        conn.close()
-
-    return df, df_cancelados, valor_incentivo
 
 @login_required(login_url='login')
-def pagina_conferencia(request):
-    context = {'lojas': carregar_lojas(request.user), 'codigo_loja_selecionada': None, 'nr_abertura_selecionada': None, 'aberturas': [], 'resultados': None}
-    
-    if request.method == 'GET' and 'codigo_loja' in request.GET:
-        codigo_loja = request.GET.get('codigo_loja')
-        nr_abertura = request.GET.get('nr_abertura')
-        context['codigo_loja_selecionada'] = codigo_loja
-        context['aberturas'] = carregar_aberturas(codigo_loja)
-        
-        if nr_abertura:
-            context['nr_abertura_selecionada'] = nr_abertura
-            # ==========================================
-            # NOVA LÓGICA: Buscar a data do caixa
-            # ==========================================
-            primeira_venda = VendaSWFast.objects.filter(
-                codigo_loja=codigo_loja, 
-                nr_abertura=nr_abertura, 
-                data_hora_transacao__isnull=False
-            ).order_by('data_hora_transacao').first()
-            
-            if primeira_venda and primeira_venda.data_hora_transacao:
-                context['data_caixa_selecionada'] = primeira_venda.data_hora_transacao.strftime('%d/%m/%Y')
-            # ==========================================
-            df_res, df_canc, val_inc = buscar_dados_conferencia(codigo_loja, nr_abertura, request.GET.get('incluir_dinheiro') == 'on')
-            
-            if not df_res.empty:
-                df_res = pd.concat([df_res, pd.DataFrame({"RESUMO": ["INCENTIVO IFOOD A RECEBER DINHEIRO"], "rel_swfast": [0.0], "Rel_importados": [val_inc]})], ignore_index=True)
-                df_res["Rel_importados"] = pd.to_numeric(df_res["Rel_importados"], errors='coerce').fillna(0)
-                df_res["rel_swfast"] = pd.to_numeric(df_res["rel_swfast"], errors='coerce').fillna(0)
-                
-                # CORREÇÃO AQUI: Nome da coluna alterado para 'diferenca' (sem ç e minúsculo)
-                df_res["diferenca"] = df_res["Rel_importados"] - df_res["rel_swfast"]
-                
-                # Atualizando o Subtotal com o novo nome
-                df_res = pd.concat([df_res, pd.DataFrame({
-                    "RESUMO": ["SUBTOTAL"], 
-                    "Rel_importados": [df_res["Rel_importados"].sum()], 
-                    "rel_swfast": [df_res["rel_swfast"].sum()], 
-                    "diferenca": [df_res["diferenca"].sum()]
-                })], ignore_index=True)
-                
-                context['resultados'] = df_res.fillna('').to_dict('records')
-                context['cancelados'] = df_canc.to_dict('records')
+def editar_especificacao_forma(request, pk):
+    """AJAX endpoint para editar especificação de forma de pagamento."""
+    from django.http import JsonResponse
 
-    return render(request, 'importacoes/conferencia.html', context)
+    # ── Filtro de acesso multi-loja ──────────────────────
+    lojas_user = request.user.perfil.get_lojas()
 
-# ==========================================
-# 📥 EXPORTAÇÃO DO RELATÓRIO ANALÍTICO
-# ==========================================
-@login_required(login_url='login')
-def exportar_analitico_excel(request):
-    codigo_loja = request.GET.get('codigo_loja')
-    nr_abertura = request.GET.get('nr_abertura')
-    incluir_dinheiro = request.GET.get('incluir_dinheiro') == 'on'
+    if request.method == 'POST' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        forma = get_object_or_404(FormaPagamento, pk=pk, loja__in=lojas_user)
+        nova_especificacao = request.POST.get('especific_form_pgto', '').strip()
 
-    if not codigo_loja or not nr_abertura:
-        messages.error(request, "Parâmetros inválidos para o relatório analítico.")
-        return redirect('conferencia_caixa')
+        forma.especific_form_pgto = nova_especificacao
+        forma.save(update_fields=['especific_form_pgto'])
 
-    conn = sqlite3.connect(DB_PATH)
-
-    # ==========================================
-    # 0. DEFINIR O TURNO (DIA OU NOITE)
-    # ==========================================
-    cursor = conn.cursor()
-    # Pega o horário da primeira venda desse caixa
-    cursor.execute("SELECT MIN(data_hora_transacao) FROM importacoes_vendaswfast WHERE codigo_loja = ? AND nr_abertura = ? AND data_hora_transacao IS NOT NULL", [codigo_loja, nr_abertura])
-    primeira_venda = cursor.fetchone()
-    
-    turno = "Indefinido"
-    if primeira_venda and primeira_venda[0]:
-        try:
-            # Extrai apenas a hora da string de data (Ex: de '2026-02-25 14:30:00' pega o '14')
-            hora_abertura = int(primeira_venda[0][11:13])
-            
-            # NOVA REGRA: Das 06h às 17:59 = Dia | Das 18h até 05:59 = Noite
-            if 6 <= hora_abertura < 18:
-                turno = "Dia"
-            else:
-                turno = "Noite"
-        except Exception as e:
-            print(f"Erro ao calcular o turno: {e}")
-
-    # ==========================================
-    # 1. RESUMO DO CAIXA (NOVA PRIMEIRA ABA)
-    # ==========================================
-    df_res, df_canc, val_inc = buscar_dados_conferencia(codigo_loja, nr_abertura, incluir_dinheiro)
-    
-    if not df_res.empty:
-        nova_linha_incentivo = pd.DataFrame({
-            "RESUMO": ["INCENTIVO IFOOD A RECEBER DINHEIRO"], 
-            "rel_swfast": [0.0], 
-            "Rel_importados": [val_inc]
+        return JsonResponse({
+            'status': 'success',
+            'message': f'Especificação salva: "{nova_especificacao or "vazio"}"',
+            'especific_form_pgto': forma.especific_form_pgto,
         })
-        df_res = pd.concat([df_res, nova_linha_incentivo], ignore_index=True)
-        
-        df_res["Rel_importados"] = pd.to_numeric(df_res["Rel_importados"], errors='coerce').fillna(0)
-        df_res["rel_swfast"] = pd.to_numeric(df_res["rel_swfast"], errors='coerce').fillna(0)
-        df_res["diferenca"] = df_res["Rel_importados"] - df_res["rel_swfast"]
-        
-        linha_subtotal = pd.DataFrame({
-            "RESUMO": ["SUBTOTAL"], 
-            "Rel_importados": [df_res["Rel_importados"].sum()], 
-            "rel_swfast": [df_res["rel_swfast"].sum()], 
-            "diferenca": [df_res["diferenca"].sum()]
-        })
-        df_res = pd.concat([df_res, linha_subtotal], ignore_index=True)
-        
-        # Renomeia as colunas para o Excel ficar bonito
-        df_res.rename(columns={
-            'RESUMO': 'Resumo (Forma Pagto)',
-            'Rel_importados': 'Rel. Importados (Stone/iFood)',
-            'rel_swfast': 'Rel. SWFast (Caixa)',
-            'diferenca': 'Diferença'
-        }, inplace=True)
 
-        # INSERE AS INFORMAÇÕES EXTRAS NAS PRIMEIRAS COLUNAS
-        df_res.insert(0, 'Caixa Nº', nr_abertura)
-        df_res.insert(1, 'Turno', turno)
-    else:
-        df_res = pd.DataFrame(columns=['Caixa Nº', 'Turno', 'Resumo (Forma Pagto)', 'Rel. Importados (Stone/iFood)', 'Rel. SWFast (Caixa)', 'Diferença'])
+    return JsonResponse({'status': 'error', 'message': 'Requisição inválida.'}, status=400)
 
-    # ==========================================
-    # 2. ABA: ANALÍTICO IFOOD (STATUS E REMOÇÃO DA DUPLICADA)
-    # ==========================================
-    query_ifood = """
-        SELECT
-            sw.data_hora_transacao AS "Data SWFast",
-            sw.venda AS "Nº Venda SWFast",
-            sw.id_pedido_externo AS "ID Pedido iFood",
-            
-            i.formas_pagamento AS "Forma Pgto iFood (Portal)",
-            GROUP_CONCAT(DISTINCT sw.forma_pagamento) AS "Forma Pgto SWFast",
-            
-            SUM(sw.valor_pagamento) AS "Valor SWFast (Total)",
-            
-            SUM(CASE WHEN fp.especific_form_pgto = 'IFOOD ONLINE' THEN sw.valor_pagamento ELSE 0 END) AS "Apenas ONLINE",
-            SUM(CASE WHEN fp.especific_form_pgto = 'IFOOD VOUCHER' THEN sw.valor_pagamento ELSE 0 END) AS "Apenas VOUCHER",
-            SUM(CASE WHEN fp.especific_form_pgto NOT IN ('IFOOD ONLINE', 'IFOOD VOUCHER') THEN sw.valor_pagamento ELSE 0 END) AS "Outros (Dinheiro/Cartão)",
-            
-            COALESCE(i.vlr_pedido_sw, 0) AS "iFood Repasse",
-            COALESCE(i.incentivo_ifood, 0) AS "iFood Incentivo",
-            
-            (COALESCE(i.vlr_pedido_sw, 0) - SUM(sw.valor_pagamento)) AS "Diferença",
-            
-            /* NOVA COLUNA TRAZENDO O STATUS */
-            COALESCE(i.status_pedido, 'CONCLUIDO') AS "Status iFood"
-            
-        FROM importacoes_vendaswfast sw
-        LEFT JOIN importacoes_pedidoifood i ON LOWER(TRIM(sw.id_pedido_externo)) = LOWER(TRIM(i.id_pedido))
-        
-        LEFT JOIN tbl_formapagamento fp 
-            ON LOWER(TRIM(sw.forma_pagamento)) = LOWER(TRIM(fp.forma_pagamento))
-            AND sw.codigo_loja = fp.codigo_loja
-            AND LOWER(TRIM(sw.aplicativo)) = LOWER(TRIM(fp.aplicativo))
-            
-        WHERE sw.codigo_loja = ? AND sw.nr_abertura = ? AND LOWER(sw.aplicativo) = 'ifood'
-        
-        GROUP BY sw.data_hora_transacao, sw.venda, sw.id_pedido_externo, i.formas_pagamento, i.vlr_pedido_sw, i.incentivo_ifood, i.status_pedido
-        ORDER BY sw.data_hora_transacao
-    """
-    df_ifood = pd.read_sql(query_ifood, conn, params=[codigo_loja, nr_abertura])
 
-    # ==========================================
-    # 3. ABA: CARTÕES NO SWFAST
-    # ==========================================
-    query_cartoes_sw = """
-        SELECT
-            sw.data_hora_transacao AS "Data SWFast",
-            sw.venda AS "Nº Venda",
-            sw.forma_pagamento AS "Forma Pgto SWFast",
-            sw.valor_pagamento AS "Valor Registrado no Caixa"
-        FROM importacoes_vendaswfast sw
-        LEFT JOIN tbl_formapagamento fp 
-            ON LOWER(TRIM(sw.forma_pagamento)) = LOWER(TRIM(fp.forma_pagamento))
-            AND sw.codigo_loja = fp.codigo_loja
-            AND LOWER(TRIM(sw.aplicativo)) = LOWER(TRIM(fp.aplicativo))
-        WHERE sw.codigo_loja = ? AND sw.nr_abertura = ? AND fp.especific_form_pgto = 'CARTAO'
-        ORDER BY sw.data_hora_transacao
-    """
-    df_cartoes_sw = pd.read_sql(query_cartoes_sw, conn, params=[codigo_loja, nr_abertura])
-
-    # ==========================================
-    # 4. ABA: TRANSAÇÕES REAIS STONE
-    # ==========================================
-    query_stone = """
-        SELECT
-            c.data_venda AS "Data Venda Stone",
-            c.bandeira AS "Bandeira",
-            c.produto AS "Produto",
-            c.qtd_parcelas AS "Parcelas",
-            c.valor_bruto AS "Valor Bruto",
-            c.desconto_mdr AS "Taxa MDR",
-            c.valor_liquido AS "Valor Líquido"
-        FROM importacoes_transacaostone c
-        JOIN tbl_empresa emp ON c.stonecode = emp.ncad_cartoes
-        WHERE emp.ncad_swfast = ?
-        AND c.data_venda BETWEEN 
-            (SELECT DATETIME(MIN(sw2.dthr_abert_cx), '+1 hour') FROM importacoes_vendaswfast sw2 WHERE sw2.codigo_loja = ? AND sw2.nr_abertura = ?)
-            AND 
-            (SELECT DATETIME(MAX(sw3.dthr_encerr_cx), '+1 hour') FROM importacoes_vendaswfast sw3 WHERE sw3.codigo_loja = ? AND sw3.nr_abertura = ?)
-        ORDER BY c.data_venda
-    """
-    df_stone = pd.read_sql(query_stone, conn, params=[codigo_loja, codigo_loja, nr_abertura, codigo_loja, nr_abertura])
-
-    # ==========================================
-    # 5. ABA: IFOOD NÃO INTEGRADO (LÓGICA DO USUÁRIO - LISTA DE EXCLUSÃO)
-    # ==========================================
-    query_nao_integrado = """
-        SELECT
-            i.data AS "Data no iFood",  /* Lembre de checar se o seu campo chama data ou data_pedido */
-            i.id_pedido AS "ID Pedido iFood",
-            COALESCE(i.vlr_pedido_sw, 0) AS "iFood Repasse",
-            COALESCE(i.incentivo_ifood, 0) AS "iFood Incentivo",
-            (COALESCE(i.vlr_pedido_sw, 0) + COALESCE(i.incentivo_ifood, 0)) AS "Valor Total Oculto do Caixa"
-        FROM importacoes_pedidoifood i
-        WHERE 
-            /* 1. REGRA DE OURO: Faz a varredura em todos os IDs e lista apenas os que NÃO ESTÃO no SWFast */
-            LOWER(TRIM(i.id_pedido)) NOT IN (
-                SELECT LOWER(TRIM(sw2.id_pedido_externo))
-                FROM importacoes_vendaswfast sw2
-                WHERE sw2.id_pedido_externo IS NOT NULL AND sw2.id_pedido_externo != ''
-            )
-            
-            /* 2. ATRIBUIÇÃO DE CAIXA: A venda deve ter ocorrido a partir da abertura DESTE caixa... */
-            AND i.data >= (
-                SELECT MIN(sw_atual.data_hora_transacao) 
-                FROM importacoes_vendaswfast sw_atual 
-                WHERE sw_atual.codigo_loja = ? AND sw_atual.nr_abertura = ?
-            )
-            
-            /* 3. ... e ANTES da abertura do PRÓXIMO caixa (cobrindo todo o buraco de tempo entre eles) */
-            AND i.data < COALESCE(
-                (
-                    SELECT MIN(sw_prox.data_hora_transacao) 
-                    FROM importacoes_vendaswfast sw_prox 
-                    WHERE sw_prox.codigo_loja = ? 
-                    /* Converte para número para achar matematicamente o próximo caixa */
-                    AND CAST(sw_prox.nr_abertura AS INTEGER) > CAST(? AS INTEGER)
-                ),
-                '2099-12-31 23:59:59' /* Se for o último caixa do sistema e não houver próximo, não limita o tempo final */
-            )
-        ORDER BY i.data
-    """
-    df_nao_integrado = pd.read_sql(query_nao_integrado, conn, params=[codigo_loja, nr_abertura, codigo_loja, nr_abertura])
-
-    # ==========================================
-    # GERAÇÃO DO ARQUIVO EXCEL COM CORES
-    # ==========================================
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df_res.to_excel(writer, sheet_name='Resumo do Caixa', index=False)
-        df_ifood.to_excel(writer, sheet_name='Analítico iFood (Integrados)', index=False)
-        df_nao_integrado.to_excel(writer, sheet_name='iFood NÃO Integrado (Furos)', index=False)
-        df_cartoes_sw.to_excel(writer, sheet_name='Cartões Passados no Caixa', index=False)
-        df_stone.to_excel(writer, sheet_name='Transações Reais Stone', index=False)
-        
-        # --- APLICANDO A COR VERMELHA AOS CANCELADOS ---
-        worksheet_ifood = writer.sheets['Analítico iFood (Integrados)']
-        
-        # Cor de fundo vermelho claro para destacar
-        fundo_vermelho = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid')
-        
-        # Descobre qual é a posição da coluna "Status iFood"
-        coluna_status = None
-        for idx, col_name in enumerate(df_ifood.columns):
-            if col_name == "Status iFood":
-                coluna_status = idx + 1 # openpyxl usa índice começando em 1
-                break
-                
-        # Se achou a coluna de Status, varre as linhas e pinta se for diferente de CONCLUIDO
-        if coluna_status:
-            for row_idx in range(2, len(df_ifood) + 2): # Começa da linha 2 (ignorando o cabeçalho)
-                celula_status = worksheet_ifood.cell(row=row_idx, column=coluna_status).value
-                if celula_status and str(celula_status).upper() != 'CONCLUIDO':
-                    # Pinta todas as células daquela linha de vermelho
-                    for col_idx in range(1, len(df_ifood.columns) + 1):
-                        worksheet_ifood.cell(row=row_idx, column=col_idx).fill = fundo_vermelho
-
-    output.seek(0)
-    
-    # Nomeia o arquivo com Loja, Caixa e Turno para fácil organização
-    response = HttpResponse(output, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    nome_arquivo = f'Analitico_Loja{codigo_loja}_Cx{nr_abertura}_Turno_{turno}.xlsx'
-    response['Content-Disposition'] = f'attachment; filename="{nome_arquivo}"'
-    
-    return response
 # ==========================================
-# VIEW DE LOGOUT CUSTOMIZADA
+# LOGOUT
 # ==========================================
+
 def sair_do_sistema(request):
-    logout(request) # Destrói a sessão do usuário na hora
-    return redirect('login') # Joga ele de volta para a tela de login
+    logout(request)
+    return redirect('login')

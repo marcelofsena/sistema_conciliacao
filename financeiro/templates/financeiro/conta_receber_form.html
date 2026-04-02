@@ -1,0 +1,92 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ titulo }} — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}
+  <a href="{% url 'contas_receber' %}{% if loja %}{% endif %}">Contas a Receber</a>
+  › {{ titulo }}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">💰 {{ titulo }}</h1>
+    <p class="page-header__sub">
+      Inclusão manual de títulos a receber.
+      Use para parcelamento de vales, empréstimos a funcionários e outros.
+      {% if loja %}<strong>Loja: {{ loja.descricao }}</strong>{% endif %}
+    </p>
+  </div>
+</div>
+
+<div style="max-width: 620px;">
+  <form method="POST" novalidate>
+    {% csrf_token %}
+    {{ form.loja }}
+
+    <div class="card mb-3">
+      <div class="card-header">
+        <span class="card-header__title">📋 Dados do Título</span>
+      </div>
+      <div class="card-body">
+
+        <div class="form-group">
+          <label class="form-label">{{ form.descricao.label }} <span class="required">*</span></label>
+          {{ form.descricao }}
+          {% if form.descricao.errors %}
+            <div class="form-error">❌ {{ form.descricao.errors|join:", " }}</div>
+          {% endif %}
+        </div>
+
+        <div class="form-row form-row--2">
+          <div class="form-group">
+            <label class="form-label">{{ form.tipo_manual.label }} <span class="required">*</span></label>
+            {{ form.tipo_manual }}
+            {% if form.tipo_manual.errors %}
+              <div class="form-error">❌ {{ form.tipo_manual.errors|join:", " }}</div>
+            {% endif %}
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ form.valor_original.label }} <span class="required">*</span></label>
+            {{ form.valor_original }}
+            {% if form.valor_original.errors %}
+              <div class="form-error">❌ {{ form.valor_original.errors|join:", " }}</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="form-row form-row--2">
+          <div class="form-group">
+            <label class="form-label">{{ form.data_emissao.label }} <span class="required">*</span></label>
+            {{ form.data_emissao }}
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ form.data_vencimento.label }} <span class="required">*</span></label>
+            {{ form.data_vencimento }}
+            {% if form.data_vencimento.errors %}
+              <div class="form-error">❌ {{ form.data_vencimento.errors|join:", " }}</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">{{ form.forma_pagamento.label }}</label>
+          {{ form.forma_pagamento }}
+          <div class="form-hint">Ex: Desconto em folha, Dinheiro, PIX…</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">{{ form.observacoes.label }}</label>
+          {{ form.observacoes }}
+        </div>
+
+      </div>
+    </div>
+
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn--primary btn--lg">💾 {{ acao }}</button>
+      <a href="{% url 'contas_receber' %}{% if loja %}{% endif %}"
+         class="btn btn--outline btn--lg">Cancelar</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

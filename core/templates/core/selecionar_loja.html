@@ -1,0 +1,90 @@
+{% extends 'base.html' %}
+
+{% block title %}Selecionar Loja — ERP Retaguarda{% endblock %}
+
+{% block breadcrumb %}Selecionar Loja{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 500px; margin: 40px auto;">
+  <h1>Selecionar Loja</h1>
+  <p class="text-muted" style="margin-top: 8px;">Qual loja você deseja trabalhar?</p>
+
+  <form method="post" style="margin-top: 24px;">
+    {% csrf_token %}
+
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      {% for loja in lojas %}
+        <label style="
+          display: flex;
+          align-items: center;
+          padding: 16px;
+          border: 2px solid #e5e7eb;
+          border-radius: 8px;
+          cursor: pointer;
+          transition: all 0.2s;
+        "
+        onmouseover="this.style.borderColor='#3b82f6'; this.style.backgroundColor='#f0f9ff';"
+        onmouseout="this.style.borderColor='#e5e7eb'; this.style.backgroundColor='white';">
+          <input
+            type="radio"
+            name="loja_id"
+            value="{{ loja.id_empresa }}"
+            style="width: 20px; height: 20px; cursor: pointer; margin-right: 12px;"
+            {% if forloop.first %}checked{% endif %}
+          />
+          <div>
+            <div style="font-weight: 600; font-size: 16px;">{{ loja.descricao }}</div>
+            <div style="font-size: 14px; color: #6b7280; margin-top: 4px;">{{ loja.get_razao_social }}</div>
+          </div>
+        </label>
+      {% endfor %}
+    </div>
+
+    <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 24px; padding: 12px;">
+      Continuar
+    </button>
+  </form>
+</div>
+
+<style>
+  .card {
+    background: white;
+    border-radius: 8px;
+    padding: 32px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+
+  .card h1 {
+    font-size: 28px;
+    font-weight: 700;
+    margin: 0;
+    color: #111827;
+  }
+
+  .text-muted {
+    color: #6b7280;
+  }
+
+  .btn {
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-primary {
+    background-color: #3b82f6;
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background-color: #2563eb;
+  }
+
+  .btn-primary:active {
+    transform: scale(0.98);
+  }
+</style>
+{% endblock %}

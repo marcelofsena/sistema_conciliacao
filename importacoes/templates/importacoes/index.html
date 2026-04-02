@@ -1,27 +1,165 @@
-{% extends 'importacoes/base.html' %}
+{% extends 'base.html' %}
+
+{% block title %}Dashboard — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}Dashboard{% endblock %}
 
 {% block content %}
-    <h2 style="color: #2c3e50; border-bottom: 2px solid #ecf0f1; padding-bottom: 10px;">Bem-vindo ao Sistema de Conciliação</h2>
-    
-    <p style="font-size: 16px; line-height: 1.6;">Siga o fluxo de trabalho abaixo para realizar a conferência diária do seu caixa:</p>
-    
-    <div style="display: flex; gap: 20px; margin-top: 30px;">
-        <div style="flex: 1; background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #3498db;">
-            <h3>1. Importação</h3>
-            <p>Faça o upload dos arquivos do SWFast (Vendas e Turnos), planilhas da Stone e do iFood.</p>
-            <a href="{% url 'upload_arquivos' %}" class="btn-primary" style="margin-top: 10px;">Ir para Importação</a>
-        </div>
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">Bem-vindo, {{ request.user.get_full_name|default:request.user.username }} 👋</h1>
+    <p class="page-header__sub">Visão geral do sistema — {{ hoje|date:"d \d\e F \d\e Y" }}</p>
+  </div>
+</div>
 
-        <div style="flex: 1; background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #f39c12;">
-            <h3>2. Sincronização</h3>
-            <p>Sincronize as formas de pagamento para garantir que novas regras sejam aplicadas.</p>
-            <a href="{% url 'formas_pagamento' %}" class="btn-primary" style="background: #f39c12; margin-top: 10px;">Ir para Sincronização</a>
-        </div>
+<!-- Alertas ativos -->
+{% for alerta in alertas %}
+<div class="alert alert--{% if alerta.tipo == 'error' %}error{% else %}warning{% endif %}" style="margin-bottom:8px;">
+  <span class="alert__icon">{% if alerta.tipo == 'error' %}❌{% else %}⚠️{% endif %}</span>
+  <div class="alert__body">
+    {{ alerta.msg }}
+    {% if alerta.link %}
+      &nbsp;<a href="{% url alerta.link %}" style="font-weight:600;">{{ alerta.link_label }}</a>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
 
-        <div style="flex: 1; background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #27ae60;">
-            <h3>3. Conferência</h3>
-            <p>Cruze os dados e verifique se as vendas batem com os valores de repasse (Stone/iFood).</p>
-            <a href="{% url 'conferencia_caixa' %}" class="btn-primary btn-success" style="margin-top: 10px;">Ir para Conferência</a>
-        </div>
+<!-- ── Seção Operacional ──────────────────────────────── -->
+<div class="dashboard-section-label">Operacional</div>
+<div class="metric-grid" style="margin-bottom:24px;">
+  <div class="metric-card">
+    <div class="metric-card__icon metric-card__icon--blue">🏪</div>
+    <div class="metric-card__label">Lojas ativas</div>
+    <div class="metric-card__value">{{ total_lojas }}</div>
+    <div class="metric-card__footer"><a href="{% url 'empresas_lista' %}">Gerenciar →</a></div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-card__icon metric-card__icon--green">🧾</div>
+    <div class="metric-card__label">Vendas importadas</div>
+    <div class="metric-card__value">{{ total_vendas }}</div>
+    <div class="metric-card__footer"><a href="{% url 'conferencia_caixa' %}">Ver conferência →</a></div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-card__icon metric-card__icon--amber">📦</div>
+    <div class="metric-card__label">Pedidos iFood</div>
+    <div class="metric-card__value">{{ total_pedidos }}</div>
+    <div class="metric-card__footer"><a href="{% url 'upload_arquivos' %}">Importar →</a></div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-card__icon {% if formas_sem_config %}metric-card__icon--red{% else %}metric-card__icon--green{% endif %}">💳</div>
+    <div class="metric-card__label">Formas sem config.</div>
+    <div class="metric-card__value">{{ formas_sem_config }}</div>
+    <div class="metric-card__footer">
+      {% if formas_sem_config %}<a href="{% url 'formas_pagamento' %}">Configurar →</a>
+      {% else %}Tudo configurado ✅{% endif %}
     </div>
+  </div>
+</div>
+
+<!-- ── Seção Contabilidade ───────────────────────────── -->
+<div class="dashboard-section-label">Contabilidade</div>
+<div class="metric-grid" style="margin-bottom:24px;">
+  <div class="metric-card">
+    <div class="metric-card__icon metric-card__icon--green">📅</div>
+    <div class="metric-card__label">Períodos abertos</div>
+    <div class="metric-card__value">{{ periodos_abertos }}</div>
+    <div class="metric-card__footer"><a href="{% url 'periodos_contabeis' %}">Ver períodos →</a></div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-card__icon metric-card__icon--blue">📝</div>
+    <div class="metric-card__label">Lançamentos (mês)</div>
+    <div class="metric-card__value">{{ lancamentos_mes }}</div>
+    <div class="metric-card__footer"><a href="{% url 'lancamentos' %}">Ver lançamentos →</a></div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-card__icon {% if eventos_pendentes %}metric-card__icon--amber{% else %}metric-card__icon--green{% endif %}">📡</div>
+    <div class="metric-card__label">Eventos pendentes</div>
+    <div class="metric-card__value">{{ eventos_pendentes }}</div>
+    <div class="metric-card__footer"><a href="{% url 'eventos_operacionais' %}">Ver eventos →</a></div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-card__icon {% if eventos_erro %}metric-card__icon--red{% else %}metric-card__icon--green{% endif %}">⚡</div>
+    <div class="metric-card__label">Eventos com erro</div>
+    <div class="metric-card__value {% if eventos_erro %}metric-value--red{% endif %}">{{ eventos_erro }}</div>
+    <div class="metric-card__footer">
+      {% if eventos_erro %}<a href="{% url 'eventos_operacionais' %}">Investigar →</a>
+      {% else %}Sem erros ✅{% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- ── Seção Financeiro ──────────────────────────────── -->
+<div class="dashboard-section-label">Financeiro</div>
+<div class="metric-grid" style="margin-bottom:32px;">
+  <div class="metric-card">
+    <div class="metric-card__icon metric-card__icon--green">💰</div>
+    <div class="metric-card__label">A receber (aberto)</div>
+    <div class="metric-card__value" style="color:var(--green,#16a34a);">R$ {{ cr_aberto|floatformat:2 }}</div>
+    <div class="metric-card__footer">
+      {% if cr_vencido %}<a href="{% url 'contas_receber' %}" style="color:var(--red,#dc2626);">{{ cr_vencido }} vencido(s) →</a>
+      {% else %}<a href="{% url 'contas_receber' %}">Ver títulos →</a>{% endif %}
+    </div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-card__icon metric-card__icon--red">💸</div>
+    <div class="metric-card__label">A pagar (aberto)</div>
+    <div class="metric-card__value" style="color:var(--red,#dc2626);">R$ {{ cp_aberto|floatformat:2 }}</div>
+    <div class="metric-card__footer">
+      {% if cp_vencido %}<a href="{% url 'contas_pagar' %}" style="color:var(--red,#dc2626);">{{ cp_vencido }} vencido(s) →</a>
+      {% else %}<a href="{% url 'contas_pagar' %}">Ver títulos →</a>{% endif %}
+    </div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-card__icon metric-card__icon--blue">📈</div>
+    <div class="metric-card__label">Posição líquida</div>
+    <div class="metric-card__value {% if cr_aberto >= cp_aberto %}metric-value--green{% else %}metric-value--red{% endif %}">
+      R$ {{ cr_aberto|floatformat:2 }}
+    </div>
+    <div class="metric-card__footer"><a href="{% url 'relatorios_contabeis' %}">Ver DRE/DFC →</a></div>
+  </div>
+</div>
+
+<!-- ── Fluxo de trabalho ──────────────────────────────── -->
+<div class="dashboard-section-label">Fluxo de Trabalho Diário</div>
+<div class="workflow-grid">
+  <div class="workflow-card workflow-card--blue">
+    <div class="workflow-card__step">Passo 1</div>
+    <div class="workflow-card__title">📥 Importação</div>
+    <div class="workflow-card__desc">
+      Faça o upload dos arquivos do SWFast (Vendas e Turnos), planilhas da Stone e do iFood.
+    </div>
+    <a href="{% url 'upload_arquivos' %}" class="btn btn--primary btn--sm">Importar arquivos</a>
+  </div>
+  <div class="workflow-card workflow-card--amber">
+    <div class="workflow-card__step">Passo 2</div>
+    <div class="workflow-card__title">💳 Sincronização</div>
+    <div class="workflow-card__desc">
+      Sincronize as formas de pagamento para que novas regras sejam reconhecidas corretamente.
+    </div>
+    <a href="{% url 'formas_pagamento' %}" class="btn btn--warning btn--sm">Sincronizar formas</a>
+  </div>
+  <div class="workflow-card workflow-card--green">
+    <div class="workflow-card__step">Passo 3</div>
+    <div class="workflow-card__title">📊 Conferência</div>
+    <div class="workflow-card__desc">
+      Cruze os dados e verifique se as vendas batem com os valores de repasse (Stone / iFood).
+    </div>
+    <a href="{% url 'conferencia_caixa' %}" class="btn btn--success btn--sm">Conferir caixa</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.dashboard-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .8px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0 0 10px 2px;
+}
+.metric-value--red   { color: var(--red,   #dc2626); }
+.metric-value--green { color: var(--green, #16a34a); }
+</style>
 {% endblock %}

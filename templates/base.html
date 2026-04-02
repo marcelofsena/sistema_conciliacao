@@ -1,0 +1,181 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}ERP Retaguarda{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'css/style.css' %}">
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+
+  <!-- ===== SIDEBAR ===== -->
+  <aside class="sidebar">
+
+    <!-- Logo -->
+    <div class="sidebar__logo">
+      <div class="sidebar__logo-icon">🍽️</div>
+      <div class="sidebar__logo-text">
+        <div class="sidebar__logo-title">ERP Retaguarda</div>
+        <div class="sidebar__logo-sub">Gestão de Bares e Restaurantes</div>
+      </div>
+    </div>
+
+    <!-- Usuário logado -->
+    {% if request.user.is_authenticated %}
+    <div class="sidebar__user">
+      <div class="sidebar__avatar">{{ request.user.username|first|upper }}</div>
+      <div>
+        <div class="sidebar__user-name">{{ request.user.get_full_name|default:request.user.username }}</div>
+        <div class="sidebar__user-role">
+          {% if request.user.is_superuser %}Administrador
+          {% elif request.user.perfil.tipo_acesso == 'ADMIN' %}Admin
+          {% else %}Operador{% endif %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Menu: Dashboard -->
+    <a href="{% url 'home' %}" class="sidebar__link">
+      <span class="icon">📋</span><span>Dashboard</span>
+    </a>
+
+    <div class="sidebar__divider"></div>
+
+    <!-- Menu: Operacional -->
+    <div class="sidebar__section">Operacional</div>
+    <a href="{% url 'upload_arquivos' %}" class="sidebar__link">
+      <span class="icon">📥</span><span>Importar Arquivos</span>
+    </a>
+    <a href="{% url 'formas_pagamento' %}" class="sidebar__link">
+      <span class="icon">💳</span><span>Formas de Pagamento</span>
+    </a>
+    <a href="{% url 'conferencia_caixa' %}" class="sidebar__link">
+      <span class="icon">📊</span><span>Conferência de Caixa</span>
+    </a>
+
+    <div class="sidebar__divider"></div>
+
+    <!-- Menu: Cadastros -->
+    <div class="sidebar__section">Cadastros</div>
+    <a href="{% url 'empresas_lista' %}" class="sidebar__link">
+      <span class="icon">🏪</span><span>Empresas / Lojas</span>
+    </a>
+    <a href="{% url 'plano_contas' %}" class="sidebar__link">
+      <span class="icon">📒</span><span>Plano de Contas</span>
+    </a>
+    <a href="{% url 'templates_plano_contas' %}" class="sidebar__link">
+      <span class="icon">📋</span><span>Templates de Contas</span>
+    </a>
+    <a href="{% url 'templates_evento_regra' %}" class="sidebar__link">
+      <span class="icon">🎯</span><span>Templates de Eventos</span>
+    </a>
+
+    <div class="sidebar__divider"></div>
+
+    <!-- Menu: Contabilidade -->
+    <div class="sidebar__section">Contabilidade</div>
+    <a href="{% url 'tipos_evento' %}" class="sidebar__link">
+      <span class="icon">⚡</span><span>Tipos de Evento</span>
+    </a>
+    <a href="{% url 'regras_contabeis' %}" class="sidebar__link">
+      <span class="icon">🔀</span><span>Regras Contábeis</span>
+    </a>
+    <a href="{% url 'lancamentos' %}" class="sidebar__link">
+      <span class="icon">📝</span><span>Lançamentos</span>
+    </a>
+    <a href="{% url 'simular_lancamento' %}" class="sidebar__link">
+      <span class="icon">⚙️</span><span>Simular Lançamento</span>
+    </a>
+    <a href="{% url 'eventos_operacionais' %}" class="sidebar__link">
+      <span class="icon">🔔</span><span>Eventos Operacionais</span>
+    </a>
+    <a href="{% url 'periodos_contabeis' %}" class="sidebar__link">
+      <span class="icon">📅</span><span>Períodos Contábeis</span>
+    </a>
+    <a href="{% url 'gerar_dre' %}" class="sidebar__link">
+      <span class="icon">📊</span><span>DRE (Resultado)</span>
+    </a>
+    <a href="{% url 'relatorios_contabeis' %}" class="sidebar__link">
+      <span class="icon">📈</span><span>Relatórios (DRE/DFC)</span>
+    </a>
+
+    <div class="sidebar__divider"></div>
+
+    <!-- Menu: Financeiro -->
+    <div class="sidebar__section">Financeiro</div>
+    <a href="{% url 'contas_receber' %}" class="sidebar__link">
+      <span class="icon">💰</span><span>Contas a Receber</span>
+    </a>
+    <a href="{% url 'contas_pagar' %}" class="sidebar__link">
+      <span class="icon">💸</span><span>Contas a Pagar</span>
+    </a>
+
+    <!-- Rodapé -->
+    <div class="sidebar__footer">
+      <a href="/admin/" target="_blank" class="sidebar__link">
+        <span class="icon">⚙️</span><span>Administração</span>
+      </a>
+      <a href="{% url 'logout' %}" class="sidebar__link sidebar__link--logout">
+        <span class="icon">🚪</span><span>Sair</span>
+      </a>
+    </div>
+
+  </aside>
+
+  <!-- ===== CONTEÚDO PRINCIPAL ===== -->
+  <div class="main">
+
+    <!-- Topbar -->
+    <header class="topbar">
+      <nav class="topbar__breadcrumb">
+        <span>ERP Retaguarda</span>
+        <span>›</span>
+        <span class="current">{% block breadcrumb %}Início{% endblock %}</span>
+      </nav>
+      <div class="topbar__actions">
+        {% if request.user.is_authenticated and request.user.perfil.get_lojas.count > 1 %}
+          <div class="loja-switcher">
+            <label for="loja-select">Loja:</label>
+            <select id="loja-select" onchange="trocarLoja(this.value)">
+              {% for loja in request.user.perfil.get_lojas %}
+                <option value="{{ loja.id_empresa }}" {% if loja.id_empresa == request.session.loja_id %}selected{% endif %}>
+                  {{ loja.descricao }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+        {% endif %}
+        {% block topbar_actions %}{% endblock %}
+      </div>
+    </header>
+
+    <!-- Área de conteúdo -->
+    <main class="content">
+
+      <!-- Mensagens do Django -->
+      {% if messages %}
+        {% for message in messages %}
+          <div class="alert alert--{% if message.tags == 'success' %}success{% elif message.tags == 'error' %}error{% elif message.tags == 'warning' %}warning{% else %}info{% endif %}" data-auto-dismiss="6000">
+            <span class="alert__icon">
+              {% if message.tags == 'success' %}✅
+              {% elif message.tags == 'error' %}❌
+              {% elif message.tags == 'warning' %}⚠️
+              {% else %}ℹ️{% endif %}
+            </span>
+            <div class="alert__body">{{ message }}</div>
+          </div>
+        {% endfor %}
+      {% endif %}
+
+      {% block content %}{% endblock %}
+
+    </main>
+  </div>
+
+  <script src="{% static 'js/app.js' %}"></script>
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

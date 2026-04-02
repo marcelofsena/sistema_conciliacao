@@ -1,0 +1,499 @@
+{% extends 'base.html' %}
+
+{% block title %}Simular Lançamento — ERP Retaguarda{% endblock %}
+{% block breadcrumb %}
+  <a href="{% url 'lancamentos' %}">Lançamentos</a>
+  › Simular
+{% endblock %}
+
+{% block topbar_actions %}
+  {% if loja %}
+    <a href="{% url 'lancamento_criar' %}" class="btn btn--primary btn--sm">+ Manual</a>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-header__title">📝 Simular Lançamento</h1>
+    <p class="page-header__sub">
+      Crie lançamentos rapidamente selecionando evento e informando valores. Com suporte a estorno.
+    </p>
+  </div>
+</div>
+
+<style>
+  .valor-input {
+    text-align: right;
+    font-weight: 500;
+  }
+  .resumo-valores {
+    padding: 12px;
+    background: var(--surface-alt);
+    border-radius: 4px;
+    margin-top: 16px;
+  }
+  .resumo-valores div {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-top: 8px;
+  }
+  .resumo-valores .item {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+  }
+  .resumo-valores .item-label {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .resumo-valores .item-valor {
+    font-weight: 600;
+  }
+  .status-conferido {
+    color: var(--success-color);
+  }
+  .status-nao-conferido {
+    color: var(--error-color);
+  }
+</style>
+
+<div style="max-width: 800px;">
+  <!-- Seleção de Loja -->
+  <div class="card mb-3">
+    <div class="card-body">
+    </div>
+  </div>
+
+  {% if loja %}
+    <!-- Seletor de Evento (GET) -->
+    {% if not regra %}
+      <div class="card mb-3">
+        <div class="card-body">
+          <form method="GET" id="form-evento" style="display: flex; gap: 12px; align-items: flex-end;">
+            <div style="flex: 1;">
+              <label class="form-label">Tipo de Evento <span class="required">*</span></label>
+              <select name="tipo_evento" class="form-control" required onchange="document.getElementById('form-evento').submit()">
+                <option value="">— Selecione um evento —</option>
+                {% for te in tipos_evento %}
+                  <option value="{{ te.pk }}">{{ te.codigo }} — {{ te.descricao }}</option>
+                {% endfor %}
+              </select>
+              <div class="form-hint">Selecione o tipo de evento para carregar as contas vinculadas.</div>
+            </div>
+          </form>
+        </div>
+      </div>
+    {% else %}
+      <!-- Mostrar evento já selecionado -->
+      <div class="card mb-3" style="background: #f0f9ff; border: 1px solid #0ea5e9;">
+        <div class="card-body">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <div style="font-size: 12px; color: var(--text-muted);">Evento selecionado:</div>
+              <div style="font-weight: 600; font-size: 16px;">{{ regra.tipo_evento.codigo }}</div>
+            </div>
+            <a href="{% url 'simular_lancamento' %}" class="btn btn--outline btn--sm">Trocar Evento</a>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+
+    <!-- Formulário Principal (aparece quando evento é selecionado) -->
+    {% if regra %}
+    <div style="margin-bottom: 16px; display: flex; gap: 12px;">
+      <button type="button" class="btn btn--outline btn--sm" onclick="limparFormulario()">🔄 Limpar Valores</button>
+      <a href="{% url 'simular_lancamento' %}" class="btn btn--ghost btn--sm">Trocar Evento</a>
+      <a href="{% url 'lancamentos' %}" class="btn btn--ghost btn--sm">Ver Lançamentos</a>
+    </div>
+
+    <form method="POST" novalidate id="form-principal">
+      {% csrf_token %}
+      <input type="hidden" name="tipo_evento" value="{{ regra.tipo_evento.pk }}">
+
+      <div class="card mb-3">
+        <div class="card-header">
+          <span class="card-header__title">⚡ Data e Tipo de Lançamento</span>
+        </div>
+        <div class="card-body">
+          <!-- Data do Lançamento -->
+          <div class="form-group">
+            <label class="form-label">Data do Lançamento <span class="required">*</span></label>
+            <input type="date" name="data_lancamento" class="form-control" required>
+          </div>
+
+          <!-- Estorno -->
+          <div class="form-group" style="padding-top: 8px;">
+            <label class="form-check">
+              <input type="checkbox" name="eh_estorno" value="on" onchange="atualizarResumo()">
+              <label style="font-weight: 400;">Este é um estorno (inverte débitos e créditos)</label>
+            </label>
+            <div class="form-hint">Se marcado, débitos vão para créditos e vice-versa.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Visualização das Partidas -->
+      <div class="card mb-3">
+          <div class="card-header">
+            <span class="card-header__title">📊 Partidas da Regra</span>
+          </div>
+          <div class="card-body">
+            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+              Informe os valores para cada débito e crédito. Os totais devem conferir.
+            </p>
+
+            {% if partidas_debito|length == 1 and partidas_credito|length == 1 %}
+              <!-- Único valor para 1D/1C -->
+              <div class="form-group">
+                <label class="form-label">Valor <span class="required">*</span></label>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                  <div>
+                    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">Débito</div>
+                    <div style="font-weight: 600;">
+                      {{ partidas_debito.0.conta.codigo_reduzido }} — {{ partidas_debito.0.conta.nome|truncatewords:4 }}
+                    </div>
+                  </div>
+                  <div>
+                    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">Crédito</div>
+                    <div style="font-weight: 600;">
+                      {{ partidas_credito.0.conta.codigo_reduzido }} — {{ partidas_credito.0.conta.nome|truncatewords:4 }}
+                    </div>
+                  </div>
+                </div>
+                <input type="number" name="valor_unico" class="form-control valor-input" placeholder="0.00" step="0.01" required style="margin-top: 16px;">
+              </div>
+            {% else %}
+              <!-- Múltiplos débitos/créditos -->
+              <div style="overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse;">
+                  <thead>
+                    <tr style="border-bottom: 2px solid var(--border-color);">
+                      <th style="padding: 12px; text-align: left; font-weight: 600; color: var(--text-muted); font-size: 12px;">Conta</th>
+                      <th style="padding: 12px; text-align: left; font-weight: 600; color: var(--text-muted); font-size: 12px;">Tipo</th>
+                      <th style="padding: 12px; text-align: right; font-weight: 600; color: var(--text-muted); font-size: 12px; width: 180px;">Valor</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for partida in partidas_debito %}
+                      <tr style="border-bottom: 1px solid var(--border-color);">
+                        <td style="padding: 12px;">
+                          <strong>{{ partida.conta.codigo_reduzido }}</strong><br>
+                          <span style="font-size: 12px; color: var(--text-muted);">{{ partida.conta.nome }}</span>
+                        </td>
+                        <td style="padding: 12px;">
+                          <span class="badge badge--blue">D</span>
+                        </td>
+                        <td style="padding: 12px;">
+                          <input type="number" name="valor_debito_{{ partida.id }}" class="form-control valor-input valor-campo" placeholder="0.00" step="0.01" onchange="atualizarResumo()">
+                        </td>
+                      </tr>
+                    {% endfor %}
+                    {% for partida in partidas_credito %}
+                      <tr style="border-bottom: 1px solid var(--border-color);">
+                        <td style="padding: 12px;">
+                          <strong>{{ partida.conta.codigo_reduzido }}</strong><br>
+                          <span style="font-size: 12px; color: var(--text-muted);">{{ partida.conta.nome }}</span>
+                        </td>
+                        <td style="padding: 12px;">
+                          <span class="badge badge--amber">C</span>
+                        </td>
+                        <td style="padding: 12px;">
+                          <input type="number" name="valor_credito_{{ partida.id }}" class="form-control valor-input valor-campo" placeholder="0.00" step="0.01" onchange="atualizarResumo()">
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="resumo-valores">
+                <div style="font-size: 12px; color: var(--text-muted); font-weight: 600;">Resumo:</div>
+                <div>
+                  <div class="item">
+                    <span class="item-label">Total Débitos:</span>
+                    <span class="item-valor" id="total-debito">R$ 0.00</span>
+                  </div>
+                  <div class="item">
+                    <span class="item-label">Total Créditos:</span>
+                    <span class="item-valor" id="total-credito">R$ 0.00</span>
+                  </div>
+                </div>
+                <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color);">
+                  <span class="item-label">Status:</span>
+                  <span class="item-valor" id="status-conferencia">-</span>
+                </div>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn--primary btn--lg" onclick="rolarParaPreview()">📊 Gerar Preview</button>
+        <a href="{% url 'lancamentos' %}" class="btn btn--outline btn--lg">Cancelar</a>
+      </div>
+      </form>
+    {% endif %}
+
+    <!-- Preview do Lançamento -->
+    {% if preview_lancamento %}
+      <div id="preview-lancamento" class="card" style="margin-top: 24px; border: 2px solid var(--success-color);">
+        <div class="card-header" style="background: var(--success-color); color: white;">
+          <span class="card-header__title">✓ Preview do Lançamento</span>
+        </div>
+        <div class="card-body">
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px;">
+            <div>
+              <div style="font-size: 12px; color: var(--text-muted);">Evento</div>
+              <div style="font-weight: 600;">{{ preview_lancamento.tipo_evento }}</div>
+            </div>
+            <div>
+              <div style="font-size: 12px; color: var(--text-muted);">Data</div>
+              <div style="font-weight: 600;">{{ preview_lancamento.data }}</div>
+            </div>
+            <div>
+              <div style="font-size: 12px; color: var(--text-muted);">Estorno?</div>
+              <div style="font-weight: 600;">
+                {% if preview_lancamento.eh_estorno %}
+                  <span class="badge badge--red">SIM</span>
+                {% else %}
+                  <span class="badge badge--green">NÃO</span>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+
+          <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse;">
+              <thead>
+                <tr style="border-bottom: 2px solid var(--border-color);">
+                  <th style="padding: 12px; text-align: left; font-weight: 600; color: var(--text-muted); font-size: 12px;">Conta</th>
+                  <th style="padding: 12px; text-align: left; font-weight: 600; color: var(--text-muted); font-size: 12px;">Tipo</th>
+                  <th style="padding: 12px; text-align: right; font-weight: 600; color: var(--text-muted); font-size: 12px;">Valor</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for partida in preview_lancamento.partidas %}
+                  <tr style="border-bottom: 1px solid var(--border-color);">
+                    <td style="padding: 12px;">
+                      <strong>{{ partida.conta.codigo_reduzido }}</strong><br>
+                      <span style="font-size: 12px; color: var(--text-muted);">{{ partida.conta.nome }}</span>
+                    </td>
+                    <td style="padding: 12px;">
+                      {% if partida.tipo == 'D' %}
+                        <span class="badge badge--blue">Débito</span>
+                      {% else %}
+                        <span class="badge badge--amber">Crédito</span>
+                      {% endif %}
+                    </td>
+                    <td style="padding: 12px; text-align: right; font-weight: 600;">
+                      R$ {{ partida.valor|floatformat:2 }}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          <form method="POST" action="{% url 'confirmar_lancamento' %}" style="display: flex; gap: 12px;">
+            {% csrf_token %}
+            <input type="hidden" name="tipo_evento" value="{{ regra.tipo_evento.pk }}">
+            <input type="hidden" name="regra_id" value="{{ regra.pk }}">
+            <input type="hidden" name="data_lancamento" value="{{ preview_lancamento.data }}">
+            <input type="hidden" name="eh_estorno" value="{% if preview_lancamento.eh_estorno %}on{% endif %}">
+
+            <!-- Passar valores das partidas baseado no ID da PartidaRegra -->
+            {% for partida in preview_lancamento.partidas %}
+              {% if partida.tipo == 'D' %}
+                <input type="hidden" name="valor_debito_{{ partida.partida_regra_id }}" value="{{ partida.valor }}">
+              {% else %}
+                <input type="hidden" name="valor_credito_{{ partida.partida_regra_id }}" value="{{ partida.valor }}">
+              {% endif %}
+            {% endfor %}
+
+            <button type="submit" class="btn btn--success btn--lg">💾 Confirmar e Contabilizar</button>
+            <button type="button" class="btn btn--outline btn--lg" onclick="editarFormulario();">✏️ Editar</button>
+            <button type="button" class="btn btn--ghost btn--lg" onclick="apagarPreview();">✕ Apagar Preview</button>
+            <button type="button" class="btn btn--ghost btn--lg" onclick="limparFormulario(); document.getElementById('form-principal').scrollIntoView({behavior: 'smooth'});">↻ Novo do Mesmo Evento</button>
+          </form>
+
+          <!-- Mensagem de erro de natureza (aparece com delay) -->
+          {% if preview_lancamento.erro_natureza %}
+          <div id="erro-natureza-msg" style="margin-top: 16px; opacity: 0; transition: opacity 0.3s ease-in;">
+            <div style="padding: 12px 16px; background: #fee2e2; border-left: 4px solid #dc2626; border-radius: 4px; color: #7f1d1d;">
+              <strong style="color: #dc2626;">⚠️ Não há saldo para o registro da conta!</strong>
+              <p style="margin: 6px 0 0 0; font-size: 13px;">
+                Ajuste os valores ou edite o lançamento para continuar.
+              </p>
+            </div>
+          </div>
+          <script>
+            // Mostrar mensagem com delay
+            setTimeout(() => {
+              const msg = document.getElementById('erro-natureza-msg');
+              if (msg) msg.style.opacity = '1';
+            }, 500);
+          </script>
+          {% endif %}
+        </div>
+      </div>
+    {% endif %}
+  {% else %}
+    <div class="empty-state" style="padding-top: 80px;">
+      <div class="empty-state__icon">🏪</div>
+      <div class="empty-state__title">Selecione uma loja</div>
+      <div class="empty-state__desc">Use o seletor acima para começar a simular lançamentos.</div>
+    </div>
+  {% endif %}
+</div>
+
+<script>
+function atualizarResumo() {
+  const campos = document.querySelectorAll('.valor-campo');
+  let totalDebito = 0;
+  let totalCredito = 0;
+
+  campos.forEach(campo => {
+    const valor = parseFloat(campo.value) || 0;
+    if (campo.name.startsWith('valor_debito_')) {
+      totalDebito += valor;
+    } else if (campo.name.startsWith('valor_credito_')) {
+      totalCredito += valor;
+    }
+  });
+
+  // Atualizar display
+  document.getElementById('total-debito').textContent = 'R$ ' + totalDebito.toFixed(2).replace('.', ',');
+  document.getElementById('total-credito').textContent = 'R$ ' + totalCredito.toFixed(2).replace('.', ',');
+
+  // Verificar se confere (com margem de erro para ponto flutuante)
+  const diferenca = Math.abs(totalDebito - totalCredito);
+  const statusEl = document.getElementById('status-conferencia');
+
+  if (totalDebito === 0 && totalCredito === 0) {
+    statusEl.textContent = 'Aguardando valores...';
+    statusEl.className = 'item-valor';
+  } else if (diferenca < 0.01) {
+    statusEl.textContent = '✓ Conferido';
+    statusEl.className = 'item-valor status-conferido';
+  } else {
+    statusEl.textContent = '✗ Não confere (diferença: R$ ' + diferenca.toFixed(2).replace('.', ',') + ')';
+    statusEl.className = 'item-valor status-nao-conferido';
+  }
+}
+
+function editarFormulario() {
+  // Recuperar valores do preview e preencher o formulário principal
+  const preview = document.getElementById('preview-lancamento');
+  if (!preview) return;
+
+  // Preencher data a partir do input hidden
+  const dataHidden = document.querySelector('input[name="data_lancamento"][type="hidden"]');
+  const dataInput = document.querySelector('#form-principal input[name="data_lancamento"]');
+  if (dataInput && dataHidden) {
+    dataInput.value = dataHidden.value;
+  }
+
+  // Preencher estorno a partir do input hidden
+  const estornoHidden = document.querySelector('input[name="eh_estorno"][type="hidden"]');
+  const estornoCheckbox = document.querySelector('#form-principal input[name="eh_estorno"][type="checkbox"]');
+  if (estornoCheckbox) {
+    estornoCheckbox.checked = estornoHidden && estornoHidden.value === 'on';
+  }
+
+  // Preencher valores das partidas do preview
+  // Os inputs hidden com os valores estão na form de confirmação
+  const form = preview.querySelector('form');
+  if (form) {
+    // Encontrar todos os inputs hidden com valores
+    const hiddenInputs = form.querySelectorAll('input[type="hidden"][name^="valor_"]');
+
+    hiddenInputs.forEach(hiddenInput => {
+      // Exemplo: valor_debito_5 ou valor_credito_5
+      const fieldName = hiddenInput.name; // valor_debito_5 ou valor_credito_5
+      const valor = hiddenInput.value;
+
+      // Encontrar o campo correspondente no formulário principal
+      const campoEdicao = document.querySelector(`#form-principal input[name="${fieldName}"]`);
+      if (campoEdicao) {
+        campoEdicao.value = valor;
+      }
+    });
+  }
+
+  // Atualizar resumo
+  atualizarResumo();
+
+  // Scroll para o formulário principal para editar
+  document.getElementById('form-principal').scrollIntoView({ behavior: 'smooth' });
+
+  // Focar no primeiro campo de entrada de valores
+  setTimeout(() => {
+    const primeiroValor = document.querySelector('#form-principal .valor-campo');
+    if (primeiroValor) {
+      primeiroValor.focus();
+    }
+  }, 300);
+}
+
+function apagarPreview() {
+  // Remover o elemento de preview do DOM
+  const preview = document.getElementById('preview-lancamento');
+  if (preview) {
+    preview.style.transition = 'opacity 0.3s';
+    preview.style.opacity = '0';
+    setTimeout(() => {
+      preview.remove();
+    }, 300);
+  }
+}
+
+function limparFormulario() {
+  // Limpar todos os campos de valor
+  const campos = document.querySelectorAll('.valor-campo');
+  campos.forEach(campo => {
+    campo.value = '';
+  });
+
+  // Limpar checkbox de estorno
+  const estorno = document.querySelector('input[name="eh_estorno"]');
+  if (estorno) {
+    estorno.checked = false;
+  }
+
+  // Limpar data
+  const data = document.querySelector('input[name="data_lancamento"]');
+  if (data) {
+    data.value = '';
+  }
+
+  // Atualizar resumo
+  atualizarResumo();
+
+  // Scroll para o topo do formulário
+  document.getElementById('form-principal').scrollIntoView({ behavior: 'smooth' });
+}
+
+function rolarParaPreview() {
+  const preview = document.getElementById('preview-lancamento');
+  if (preview) {
+    // Aguardar um pouco para a página recarregar com o preview
+    setTimeout(() => {
+      preview.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 200);
+  }
+}
+
+// Se houver preview já na página, rolar para ele ao carregar
+document.addEventListener('DOMContentLoaded', function() {
+  const preview = document.getElementById('preview-lancamento');
+  if (preview) {
+    // Aguardar um pouco para o layout estar completo
+    setTimeout(() => {
+      preview.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 300);
+  }
+});
+</script>
+{% endblock %}
